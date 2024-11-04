@@ -13,6 +13,7 @@
 use zbus::dbus_proxy;
 
 #[dbus_proxy(
+    default_service = "org.kde.StatusNotifierWatcher",
     interface = "org.kde.StatusNotifierWatcher",
     default_path = "/StatusNotifierWatcher"
 )]

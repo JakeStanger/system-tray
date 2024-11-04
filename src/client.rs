@@ -18,7 +18,7 @@ use zbus::export::ordered_stream::OrderedStreamExt;
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
 use zbus::zvariant::Value;
-use zbus::{Connection, ConnectionBuilder, Message};
+use zbus::{Connection, Message};
 
 /// An event emitted by the client
 /// representing a change from either the StatusNotifierItem
@@ -86,25 +86,38 @@ impl Client {
     /// If the initialization fails for any reason,
     /// for example if unable to connect to the bus,
     /// this method will return an error.
-    pub async fn new(service_name: &str) -> crate::error::Result<Self> {
+    pub async fn new() -> crate::error::Result<Self> {
+        let connection = Connection::session().await?;
         let (tx, rx) = broadcast::channel(32);
 
         // first start server...
-        let watcher = StatusNotifierWatcher::new();
-
-        let connection = ConnectionBuilder::session()?
-            .name("org.kde.StatusNotifierWatcher")?
-            .serve_at("/StatusNotifierWatcher", watcher)?
-            .build()
-            .await?;
+        StatusNotifierWatcher::new().attach_to(&connection).await?;
 
         // ...then connect to it
         let watcher_proxy = StatusNotifierWatcherProxy::new(&connection).await?;
 
         // register a host on the watcher to declare we want to watch items
-        let service_name = format!("StatusNotifierHost-{service_name}");
+        // get a well-known name
+        let pid = std::process::id();
+        let mut i = 0;
+        let wellknown = loop {
+            use zbus::fdo::RequestNameReply::*;
+
+            i += 1;
+            let wellknown = format!("org.freedesktop.StatusNotifierHost-{}-{}", pid, i);
+            let wellknown: zbus::names::WellKnownName = wellknown.try_into().expect("generated well-known name is invalid");
+
+            let flags = [zbus::fdo::RequestNameFlags::DoNotQueue];
+            match connection.request_name_with_flags(&wellknown, flags.into_iter().collect()).await? {
+                PrimaryOwner => break wellknown,
+                Exists => {}
+                AlreadyOwner => {}
+                InQueue => unreachable!("request_name_with_flags returned InQueue even though we specified DoNotQueue"),
+            };
+        };
+
         watcher_proxy
-            .register_status_notifier_host(&service_name)
+            .register_status_notifier_host(&*wellknown)
             .await?;
 
         let items = Arc::new(Mutex::new(HashMap::new()));
