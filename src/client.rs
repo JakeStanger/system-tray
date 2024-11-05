@@ -6,6 +6,7 @@ use crate::dbus::{self, OwnedValueExt};
 use crate::error::Error;
 use crate::item::{self, Status, StatusNotifierItem};
 use crate::menu::TrayMenu;
+use crate::names;
 use dbus::DBusProps;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -123,6 +124,7 @@ impl Client {
             };
         };
 
+        debug!("wellknown: {wellknown}");
         watcher_proxy
             .register_status_notifier_host(&wellknown)
             .await?;
@@ -171,6 +173,31 @@ impl Client {
                 }
 
                 Ok::<(), Error>(())
+            });
+        }
+
+        // Handle other watchers unregistering and this one taking over
+        // It is necessary to clear all items as our watcher will then re-send them all
+        {
+            let tx = tx.clone();
+            let items = items.clone();
+
+            let dbus_proxy = DBusProxy::new(&connection).await?;
+
+            let mut stream = dbus_proxy.receive_name_acquired().await?;
+
+            spawn(async move {
+                while let Some(thing) = stream.next().await {
+                    let body = thing.args().unwrap();
+                    if body.name == names::WATCHER_BUS {
+                        let mut items = items.lock().unwrap();
+                        let keys = items.keys().cloned().collect::<Vec<_>>();
+                        for address in keys {
+                            items.remove(&address);
+                            tx.send(Event::Remove(address)).unwrap();
+                        }
+                    }
+                }
             });
         }
 
