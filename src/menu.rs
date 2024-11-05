@@ -1,6 +1,6 @@
+use crate::dbus::dbus_menu_proxy::MenuLayout;
 use serde::Deserialize;
 use zbus::zvariant::{OwnedValue, Structure, Value};
-use crate::dbus::dbus_menu_proxy::MenuLayout;
 
 /// A menu that should be displayed when clicking corresponding tray icon
 #[derive(Debug, Clone)]
@@ -22,11 +22,11 @@ pub struct MenuItem {
     pub menu_type: MenuType,
     /// Text of the item, except that:
     ///  - two consecutive underscore characters "__" are displayed as a
-    ///  single underscore,
+    ///    single underscore,
     ///  - any remaining underscore characters are not displayed at all,
     ///  - the first of those remaining underscore characters (unless it is
-    ///  the last character in the string) indicates that the following
-    ///  character is the access key.
+    ///    the last character in the string) indicates that the following
+    ///    character is the access key.
     pub label: Option<String>,
     /// Whether the item can be activated or not.
     pub enabled: bool,

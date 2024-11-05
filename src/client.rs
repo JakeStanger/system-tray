@@ -105,19 +105,26 @@ impl Client {
 
             i += 1;
             let wellknown = format!("org.freedesktop.StatusNotifierHost-{}-{}", pid, i);
-            let wellknown: zbus::names::WellKnownName = wellknown.try_into().expect("generated well-known name is invalid");
+            let wellknown: zbus::names::WellKnownName = wellknown
+                .try_into()
+                .expect("generated well-known name is invalid");
 
             let flags = [zbus::fdo::RequestNameFlags::DoNotQueue];
-            match connection.request_name_with_flags(&wellknown, flags.into_iter().collect()).await? {
+            match connection
+                .request_name_with_flags(&wellknown, flags.into_iter().collect())
+                .await?
+            {
                 PrimaryOwner => break wellknown,
                 Exists => {}
                 AlreadyOwner => {}
-                InQueue => unreachable!("request_name_with_flags returned InQueue even though we specified DoNotQueue"),
+                InQueue => unreachable!(
+                    "request_name_with_flags returned InQueue even though we specified DoNotQueue"
+                ),
             };
         };
 
         watcher_proxy
-            .register_status_notifier_host(&*wellknown)
+            .register_status_notifier_host(&wellknown)
             .await?;
 
         let items = Arc::new(Mutex::new(HashMap::new()));

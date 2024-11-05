@@ -7,7 +7,6 @@ pub mod notifier_item_proxy;
 pub mod notifier_watcher_proxy;
 pub mod status_notifier_watcher;
 
-
 /// Wrapper around map of properties fetched from a proxy.
 pub(crate) struct DBusProps(pub HashMap<String, OwnedValue>);
 
@@ -15,9 +14,9 @@ impl DBusProps {
     /// Gets `key` from the map if present,
     /// downcasting it to type `T`.
     pub fn get<'a, T>(&'a self, key: &str) -> Option<&'a T>
-        where
-            T: ?Sized,
-            &'a T: TryFrom<&'a Value<'a>>,
+    where
+        T: ?Sized,
+        &'a T: TryFrom<&'a Value<'a>>,
     {
         self.0.get(key).and_then(|value| value.downcast_ref::<T>())
     }
