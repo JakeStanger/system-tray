@@ -1,6 +1,6 @@
 use crate::dbus::dbus_menu_proxy::MenuLayout;
 use serde::Deserialize;
-use zbus::zvariant::{OwnedValue, Structure, Value};
+use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
 #[derive(Debug, Clone)]
@@ -215,6 +215,15 @@ impl TryFrom<&OwnedValue> for MenuItem {
             }
 
             menu.icon_name = dict.get::<str, str>("icon-name")?.map(str::to_string);
+
+            menu.icon_data = dict.get::<str, Array>("icon-data").ok().flatten().map(|a| {
+                a.iter()
+                    .map(|v| match v {
+                        Value::U8(n) => *n,
+                        _ => panic!(),
+                    })
+                    .collect()
+            });
 
             if let Some(disposition) = dict
                 .get::<str, str>("disposition")
