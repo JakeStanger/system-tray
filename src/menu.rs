@@ -201,7 +201,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .get::<str, str>("children_display")?
                 .map(str::to_string);
 
-            // see: https://github.com/AyatanaIndicators/libdbusmenu/blob/4d03141aea4e2ad0f04ab73cf1d4f4bcc4a19f6c/libdbusmenu-glib/dbus-menu.xml#L75
+            // see: https://github.com/gnustep/libs-dbuskit/blob/4dc9b56216e46e0e385b976b0605b965509ebbbd/Bundles/DBusMenu/com.canonical.dbusmenu.xml#L76
             menu.label = dict
                 .get::<str, str>("label")?
                 .map(|label| label.replace('_', ""));
