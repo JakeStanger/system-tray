@@ -8,7 +8,6 @@ use crate::item::{self, Status, StatusNotifierItem};
 use crate::menu::TrayMenu;
 use crate::names;
 use dbus::DBusProps;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -219,11 +218,7 @@ impl Client {
         tx: broadcast::Sender<Event>,
         items: Arc<Mutex<State>>,
     ) -> crate::error::Result<()> {
-        let (destination, path) = address
-            .split_once('/')
-            .map_or((address, Cow::Borrowed("/StatusNotifierItem")), |(d, p)| {
-                (d, Cow::Owned(format!("/{p}")))
-            });
+        let (destination, path) = parse_address(address);
 
         let properties_proxy = PropertiesProxy::builder(&connection)
             .destination(destination.to_string())?
@@ -487,5 +482,36 @@ impl Client {
             .await?;
 
         Ok(())
+    }
+}
+
+fn parse_address(address: &str) -> (&str, String) {
+    address
+        .split_once('/')
+        .map_or((address, String::from("/StatusNotifierItem")), |(d, p)| {
+            (d, format!("/{p}"))
+        })
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn parse_unnamed() {
+        let address = ":1.58/StatusNotifierItem";
+        let (destination, path) = parse_address(address);
+
+        assert_eq!(":1.58", destination);
+        assert_eq!("/StatusNotifierItem", path);
+    }
+
+    #[test]
+    fn parse_named() {
+        let address = ":1.72/org/ayatana/NotificationItem/dropbox_client_1398";
+        let (destination, path) = parse_address(address);
+
+        assert_eq!(":1.72", destination);
+        assert_eq!("/org/ayatana/NotificationItem/dropbox_client_1398", path);
     }
 }
