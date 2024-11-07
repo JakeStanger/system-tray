@@ -1,6 +1,6 @@
 use crate::names;
 use tracing::{debug, error, info, warn};
-use zbus::{dbus_interface, export::ordered_stream::OrderedStreamExt, Interface};
+use zbus::{dbus_interface, export::ordered_stream::OrderedStreamExt, Interface, SignalContext};
 
 /// An instance of [`org.kde.StatusNotifierWatcher`]. It only tracks what tray items and trays
 /// exist, and doesn't have any logic for displaying items (for that, see [`Host`][`crate::Host`]).
@@ -165,6 +165,29 @@ impl StatusNotifierWatcher {
                 }
             }
         });
+
+        Ok(())
+    }
+
+    async fn unregister_status_notifier_item(
+        &mut self,
+        service: &str,
+        #[zbus(header)] hdr: zbus::MessageHeader<'_>,
+        #[zbus(connection)] con: &zbus::Connection,
+        #[zbus(signal_context)] context: SignalContext<'_>,
+    ) -> zbus::fdo::Result<()> {
+        debug!("received item unregister: {service}");
+
+        let (service, objpath) = parse_service(service, hdr, con).await?;
+        let service = zbus::names::BusName::Unique(service);
+
+        let item = format!("{}{}", service, objpath);
+
+        self.items.lock().unwrap().remove(&item);
+
+        if let Err(err) = Self::status_notifier_item_unregistered(&context, &item).await {
+            error!("{err:?}");
+        }
 
         Ok(())
     }
