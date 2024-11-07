@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
-use zbus::export::ordered_stream::OrderedStreamExt;
+use zbus::export::futures_util::StreamExt;
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
 use zbus::zvariant::Value;
@@ -305,7 +305,6 @@ impl Client {
         let dbus_proxy = DBusProxy::new(connection).await?;
 
         let mut disconnect_stream = dbus_proxy.receive_name_owner_changed().await?;
-
         let mut props_changed = notifier_item_proxy.receive_all_signals().await?;
 
         loop {
@@ -349,14 +348,30 @@ impl Client {
     ) -> Option<UpdateEvent> {
         let member = change.member()?;
 
-        let property = properties_proxy
+        let property_name = match member.as_str() {
+            "NewAttentionIcon" => "AttentionIconName",
+            "NewIcon" => "IconName",
+            "NewOverlayIcon" => "OverlayIconName",
+            "NewStatus" => "Status",
+            "NewTitle" => "Title",
+            _ => &member.as_str()["New".len()..],
+        };
+
+        let res = properties_proxy
             .get(
                 InterfaceName::from_static_str(PROPERTIES_INTERFACE)
                     .expect("to be valid interface name"),
-                member.as_str(),
+                property_name,
             )
-            .await
-            .ok()?;
+            .await;
+
+        let property = match res {
+            Ok(property) => property,
+            Err(err) => {
+                error!("error fetching property '{property_name}': {err:?}");
+                return None;
+            }
+        };
 
         debug!("received tray item update: {member} -> {property:?}");
 
