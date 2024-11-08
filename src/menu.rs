@@ -1,6 +1,8 @@
-use serde::Deserialize;
-use zbus::zvariant::{OwnedValue, Structure, Value};
 use crate::dbus::dbus_menu_proxy::MenuLayout;
+use crate::error::{Error, Result};
+use serde::Deserialize;
+use zbus::zvariant;
+use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
 #[derive(Debug, Clone)]
@@ -22,11 +24,11 @@ pub struct MenuItem {
     pub menu_type: MenuType,
     /// Text of the item, except that:
     ///  - two consecutive underscore characters "__" are displayed as a
-    ///  single underscore,
+    ///    single underscore,
     ///  - any remaining underscore characters are not displayed at all,
     ///  - the first of those remaining underscore characters (unless it is
-    ///  the last character in the string) indicates that the following
-    ///  character is the access key.
+    ///    the last character in the string) indicates that the following
+    ///    character is the access key.
     pub label: Option<String>,
     /// Whether the item can be activated or not.
     pub enabled: bool,
@@ -157,15 +159,15 @@ impl From<&str> for Disposition {
 }
 
 impl TryFrom<MenuLayout> for TrayMenu {
-    type Error = zbus::zvariant::Error;
+    type Error = Error;
 
-    fn try_from(value: MenuLayout) -> Result<Self, Self::Error> {
+    fn try_from(value: MenuLayout) -> Result<Self> {
         let submenus = value
             .fields
             .submenus
             .iter()
             .map(MenuItem::try_from)
-            .collect::<Result<_, _>>()?;
+            .collect::<std::result::Result<_, _>>()?;
 
         Ok(Self {
             id: value.id,
@@ -175,12 +177,12 @@ impl TryFrom<MenuLayout> for TrayMenu {
 }
 
 impl TryFrom<&OwnedValue> for MenuItem {
-    type Error = zbus::zvariant::Error;
+    type Error = Error;
 
-    fn try_from(value: &OwnedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &OwnedValue) -> Result<Self> {
         let structure = value
             .downcast_ref::<Structure>()
-            .ok_or_else(|| Self::Error::IncorrectType)?;
+            .ok_or(Error::ZBusVariant(zvariant::Error::IncorrectType))?;
 
         let mut fields = structure.fields().iter();
 
@@ -201,13 +203,13 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .get::<str, str>("children_display")?
                 .map(str::to_string);
 
-            // see: https://github.com/AyatanaIndicators/libdbusmenu/blob/4d03141aea4e2ad0f04ab73cf1d4f4bcc4a19f6c/libdbusmenu-glib/dbus-menu.xml#L75
+            // see: https://github.com/gnustep/libs-dbuskit/blob/4dc9b56216e46e0e385b976b0605b965509ebbbd/Bundles/DBusMenu/com.canonical.dbusmenu.xml#L76
             menu.label = dict
                 .get::<str, str>("label")?
                 .map(|label| label.replace('_', ""));
 
             if let Some(enabled) = dict.get::<str, bool>("enabled")? {
-                menu.enabled = *enabled
+                menu.enabled = *enabled;
             }
 
             if let Some(visible) = dict.get::<str, bool>("visible")? {
@@ -215,6 +217,19 @@ impl TryFrom<&OwnedValue> for MenuItem {
             }
 
             menu.icon_name = dict.get::<str, str>("icon-name")?.map(str::to_string);
+
+            if let Some(array) = dict.get::<str, Array>("icon-data")? {
+                let array = array
+                    .iter()
+                    .map(|v| {
+                        v.downcast_ref::<u8>()
+                            .ok_or(Error::InvalidData("invalid u8"))
+                            .copied()
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                menu.icon_data = Some(array);
+            }
 
             if let Some(disposition) = dict
                 .get::<str, str>("disposition")
@@ -244,7 +259,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .ok()
                 .flatten()
                 .map(MenuType::from)
-                .unwrap_or_default()
+                .unwrap_or_default();
         };
 
         if let Some(Value::Array(array)) = fields.next() {

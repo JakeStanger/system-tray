@@ -6,23 +6,23 @@ use crate::dbus::{self, OwnedValueExt};
 use crate::error::Error;
 use crate::item::{self, Status, StatusNotifierItem};
 use crate::menu::TrayMenu;
+use crate::names;
 use dbus::DBusProps;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
-use zbus::export::ordered_stream::OrderedStreamExt;
+use zbus::export::futures_util::StreamExt;
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
 use zbus::zvariant::Value;
-use zbus::{Connection, ConnectionBuilder, Message};
+use zbus::{Connection, Message};
 
 /// An event emitted by the client
-/// representing a change from either the StatusNotifierItem
-/// or DBusMenu protocols.
+/// representing a change from either the `StatusNotifierItem`
+/// or `DBusMenu` protocols.
 #[derive(Debug, Clone)]
 pub enum Event {
     /// A new `StatusNotifierItem` was added.
@@ -86,25 +86,52 @@ impl Client {
     /// If the initialization fails for any reason,
     /// for example if unable to connect to the bus,
     /// this method will return an error.
-    pub async fn new(service_name: &str) -> crate::error::Result<Self> {
+    ///
+    /// # Panics
+    ///
+    /// If the generated well-known name is invalid, the library will panic
+    /// as this indicates a major bug.
+    ///
+    /// Likewise, the spawned tasks may panic if they cannot get a `Mutex` lock.
+    pub async fn new() -> crate::error::Result<Self> {
+        let connection = Connection::session().await?;
         let (tx, rx) = broadcast::channel(32);
 
         // first start server...
-        let watcher = StatusNotifierWatcher::new();
-
-        let connection = ConnectionBuilder::session()?
-            .name("org.kde.StatusNotifierWatcher")?
-            .serve_at("/StatusNotifierWatcher", watcher)?
-            .build()
-            .await?;
+        StatusNotifierWatcher::new().attach_to(&connection).await?;
 
         // ...then connect to it
         let watcher_proxy = StatusNotifierWatcherProxy::new(&connection).await?;
 
         // register a host on the watcher to declare we want to watch items
-        let service_name = format!("StatusNotifierHost-{service_name}");
+        // get a well-known name
+        let pid = std::process::id();
+        let mut i = 0;
+        let wellknown = loop {
+            use zbus::fdo::RequestNameReply::*;
+
+            i += 1;
+            let wellknown = format!("org.freedesktop.StatusNotifierHost-{pid}-{i}");
+            let wellknown: zbus::names::WellKnownName = wellknown
+                .try_into()
+                .expect("generated well-known name is invalid");
+
+            let flags = [zbus::fdo::RequestNameFlags::DoNotQueue];
+            match connection
+                .request_name_with_flags(&wellknown, flags.into_iter().collect())
+                .await?
+            {
+                PrimaryOwner => break wellknown,
+                Exists | AlreadyOwner => {}
+                InQueue => unreachable!(
+                    "request_name_with_flags returned InQueue even though we specified DoNotQueue"
+                ),
+            };
+        };
+
+        debug!("wellknown: {wellknown}");
         watcher_proxy
-            .register_status_notifier_host(&service_name)
+            .register_status_notifier_host(&wellknown)
             .await?;
 
         let items = Arc::new(Mutex::new(HashMap::new()));
@@ -154,6 +181,33 @@ impl Client {
             });
         }
 
+        // Handle other watchers unregistering and this one taking over
+        // It is necessary to clear all items as our watcher will then re-send them all
+        {
+            let tx = tx.clone();
+            let items = items.clone();
+
+            let dbus_proxy = DBusProxy::new(&connection).await?;
+
+            let mut stream = dbus_proxy.receive_name_acquired().await?;
+
+            spawn(async move {
+                while let Some(thing) = stream.next().await {
+                    let body = thing.args()?;
+                    if body.name == names::WATCHER_BUS {
+                        let mut items = items.lock().expect("mutex lock should succeed");
+                        let keys = items.keys().cloned().collect::<Vec<_>>();
+                        for address in keys {
+                            items.remove(&address);
+                            tx.send(Event::Remove(address))?;
+                        }
+                    }
+                }
+
+                Ok::<(), Error>(())
+            });
+        }
+
         debug!("tray client initialized");
 
         Ok(Self {
@@ -172,11 +226,7 @@ impl Client {
         tx: broadcast::Sender<Event>,
         items: Arc<Mutex<State>>,
     ) -> crate::error::Result<()> {
-        let (destination, path) = address
-            .split_once('/')
-            .map_or((address, Cow::Borrowed("/StatusNotifierItem")), |(d, p)| {
-                (d, Cow::Owned(format!("/{p}")))
-            });
+        let (destination, path) = parse_address(address);
 
         let properties_proxy = PropertiesProxy::builder(&connection)
             .destination(destination.to_string())?
@@ -188,7 +238,7 @@ impl Client {
 
         items
             .lock()
-            .expect("to get lock")
+            .expect("mutex lock should succeed")
             .insert(destination.into(), (properties.clone(), None));
 
         tx.send(Event::Add(
@@ -263,7 +313,6 @@ impl Client {
         let dbus_proxy = DBusProxy::new(connection).await?;
 
         let mut disconnect_stream = dbus_proxy.receive_name_owner_changed().await?;
-
         let mut props_changed = notifier_item_proxy.receive_all_signals().await?;
 
         loop {
@@ -300,21 +349,37 @@ impl Client {
         }
     }
 
-    /// Gets the update event for a DBus properties change message.
+    /// Gets the update event for a `DBus` properties change message.
     async fn get_update_event(
         change: Arc<Message>,
         properties_proxy: &PropertiesProxy<'_>,
     ) -> Option<UpdateEvent> {
         let member = change.member()?;
 
-        let property = properties_proxy
+        let property_name = match member.as_str() {
+            "NewAttentionIcon" => "AttentionIconName",
+            "NewIcon" => "IconName",
+            "NewOverlayIcon" => "OverlayIconName",
+            "NewStatus" => "Status",
+            "NewTitle" => "Title",
+            _ => &member.as_str()["New".len()..],
+        };
+
+        let res = properties_proxy
             .get(
                 InterfaceName::from_static_str(PROPERTIES_INTERFACE)
                     .expect("to be valid interface name"),
-                member.as_str(),
+                property_name,
             )
-            .await
-            .ok()?;
+            .await;
+
+        let property = match res {
+            Ok(property) => property,
+            Err(err) => {
+                error!("error fetching property '{property_name}': {err:?}");
+                return None;
+            }
+        };
 
         debug!("received tray item update: {member} -> {property:?}");
 
@@ -360,10 +425,14 @@ impl Client {
             .build()
             .await?;
 
-        let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await.unwrap();
+        let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
         let menu = TrayMenu::try_from(menu)?;
 
-        if let Some((_, menu_cache)) = items.lock().expect("to get lock").get_mut(&destination) {
+        if let Some((_, menu_cache)) = items
+            .lock()
+            .expect("mutex lock should succeed")
+            .get_mut(&destination)
+        {
             menu_cache.replace(menu.clone());
         } else {
             error!("could not find item in state");
@@ -381,11 +450,13 @@ impl Client {
 
             match change.member() {
                 Some(name) if name == "LayoutUpdated" => {
-                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await.unwrap();
+                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
                     let menu = TrayMenu::try_from(menu)?;
 
-                    if let Some((_, menu_cache)) =
-                        items.lock().expect("to get lock").get_mut(&destination)
+                    if let Some((_, menu_cache)) = items
+                        .lock()
+                        .expect("mutex lock should succeed")
+                        .get_mut(&destination)
                     {
                         menu_cache.replace(menu.clone());
                     } else {
@@ -408,27 +479,37 @@ impl Client {
     /// returning a new receiver.
     ///
     /// Once the client is dropped, the receiver will close.
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.tx.subscribe()
     }
 
     /// Gets all current items, including their menus if present.
+    #[must_use]
     pub fn items(&self) -> Arc<Mutex<State>> {
         self.items.clone()
     }
 
     /// Sends an activate request for a menu item.
+    ///
+    /// # Errors
+    ///
+    /// The method will return an error if the connection to the `DBus` object fails,
+    /// or if sending the event fails for any reason.
+    ///
+    /// # Panics
+    ///
+    /// If the system time is somehow before the Unix epoch.
     pub async fn activate(&self, req: ActivateRequest) -> crate::error::Result<()> {
         let dbus_menu_proxy = DBusMenuProxy::builder(&self.connection)
-            .destination(req.address)
-            .unwrap()
+            .destination(req.address)?
             .path(req.menu_path)?
             .build()
             .await?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("time to flow forwards");
+            .expect("time should flow forwards");
 
         dbus_menu_proxy
             .event(
@@ -440,5 +521,36 @@ impl Client {
             .await?;
 
         Ok(())
+    }
+}
+
+fn parse_address(address: &str) -> (&str, String) {
+    address
+        .split_once('/')
+        .map_or((address, String::from("/StatusNotifierItem")), |(d, p)| {
+            (d, format!("/{p}"))
+        })
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn parse_unnamed() {
+        let address = ":1.58/StatusNotifierItem";
+        let (destination, path) = parse_address(address);
+
+        assert_eq!(":1.58", destination);
+        assert_eq!("/StatusNotifierItem", path);
+    }
+
+    #[test]
+    fn parse_named() {
+        let address = ":1.72/org/ayatana/NotificationItem/dropbox_client_1398";
+        let (destination, path) = parse_address(address);
+
+        assert_eq!(":1.72", destination);
+        assert_eq!("/org/ayatana/NotificationItem/dropbox_client_1398", path);
     }
 }

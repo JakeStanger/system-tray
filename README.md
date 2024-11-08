@@ -1,6 +1,6 @@
 # System Tray
 
-An async implementation of the StatusNotifierItem and DbusMenu protocols for building system trays.
+An async implementation of the `StatusNotifierItem` and `DbusMenu` protocols for building system trays.
 
 Requires Tokio.
 
@@ -11,7 +11,7 @@ use system_tray::client::Client;
 
 #[tokio::main]
 async fn main() {
-    let client = Client::new("my_app-1234").await.unwrap();
+    let client = Client::new().await.unwrap();
     let mut tray_rx = client.subscribe();
 
     let initial_items = client.items();

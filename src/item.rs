@@ -1,8 +1,8 @@
 use crate::dbus::DBusProps;
-use crate::error::Error;
+use crate::error::{Error, Result};
 use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
-use zbus::zvariant::{Array, Structure};
+use zbus::zvariant::{Array, Structure, Value};
 
 /// Represents an item to display inside the tray.
 /// <https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/>
@@ -32,8 +32,8 @@ pub struct StatusNotifierItem {
     ///
     /// - Passive: The item doesn't convey important information to the user, it can be considered an "idle" status and is likely that visualizations will chose to hide it.
     /// - Active: The item is active, is more important that the item will be shown in some way to the user.
-    /// - NeedsAttention: The item carries really important information for the user, such as battery charge running out and is wants to incentive the direct user intervention.
-    ///     Visualizations should emphasize in some way the items with NeedsAttention status.
+    /// - `NeedsAttention`: The item carries really important information for the user, such as battery charge running out and is wants to incentive the direct user intervention.
+    ///     Visualizations should emphasize in some way the items with `NeedsAttention` status.
     pub status: Status,
 
     /// The windowing-system dependent identifier for a window, the application can choose one of its windows to be available through this property or just set 0 if it's not interested.
@@ -41,7 +41,7 @@ pub struct StatusNotifierItem {
 
     pub icon_theme_path: Option<String>,
 
-    /// The StatusNotifierItem can carry an icon that can be used by the visualization to identify the item.
+    /// The `StatusNotifierItem` can carry an icon that can be used by the visualization to identify the item.
     ///
     /// An icon can either be identified by its Freedesktop-compliant icon name, carried by this property of by the icon data itself, carried by the property `IconPixmap`.
     /// Visualizations are encouraged to prefer icon names over icon pixmaps if both are available
@@ -66,24 +66,24 @@ pub struct StatusNotifierItem {
     /// ARGB32 binary representation of the overlay icon described in the previous paragraph.
     pub overlay_icon_pixmap: Option<Vec<IconPixmap>>,
 
-    /// The Freedesktop-compliant name of an icon. this can be used by the visualization to indicate that the item is in RequestingAttention state.
+    /// The Freedesktop-compliant name of an icon. this can be used by the visualization to indicate that the item is in `RequestingAttention` state.
     pub attention_icon_name: Option<String>,
 
     /// ARGB32 binary representation of the requesting attention icon describe in the previous paragraph.
     pub attention_icon_pixmap: Option<Vec<IconPixmap>>,
 
-    /// An item can also specify an animation associated to the RequestingAttention state.
+    /// An item can also specify an animation associated to the `RequestingAttention` state.
     /// This should be either a Freedesktop-compliant icon name or a full path.
-    /// The visualization can choose between the movie or AttentionIconPixmap (or using neither of those) at its discretion.
+    /// The visualization can choose between the movie or `AttentionIconPixmap` (or using neither of those) at its discretion.
     pub attention_movie_name: Option<String>,
 
     // /// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
     // /// (or by any other mean the visualization consider appropriate.
     // pub tool_tip: Option<Tooltip>,
-    /// The item only support the context menu, the visualization should prefer showing the menu or sending ContextMenu() instead of Activate()
+    /// The item only support the context menu, the visualization should prefer showing the menu or sending `ContextMenu()` instead of `Activate()`
     pub item_is_menu: bool,
 
-    /// DBus path to an object which should implement the com.canonical.dbusmenu interface
+    /// `DBus` path to an object which should implement the `com.canonical.dbusmenu` interface
     pub menu: Option<String>,
 }
 
@@ -145,28 +145,49 @@ impl Debug for IconPixmap {
 }
 
 impl IconPixmap {
-    // TODO: rewrite
-    fn from_array(array: &Array) -> Option<Vec<Self>> {
-        let mut pixmaps = vec![];
+    fn from_array(array: &Array) -> Result<Vec<Self>> {
+        array
+            .iter()
+            .map(|pixmap| {
+                let structure = pixmap.downcast_ref::<Structure>();
+                let fields = structure
+                    .ok_or(Error::InvalidData("invalid or missing structure data"))?
+                    .fields();
 
-        array.iter().for_each(|b| {
-            let s = b.downcast_ref::<Structure>();
-            let fields = s.unwrap().fields();
-            let width = fields[0].downcast_ref::<i32>().unwrap();
-            let height = fields[1].downcast_ref::<i32>().unwrap();
-            let pixel_values = fields[2].downcast_ref::<Array>().unwrap().get();
-            let mut pixels = vec![];
-            pixel_values.iter().for_each(|p| {
-                pixels.push(*p.downcast_ref::<u8>().unwrap());
-            });
-            pixmaps.push(IconPixmap {
-                width: *width,
-                height: *height,
-                pixels,
+                let width = fields
+                    .first()
+                    .and_then(Value::downcast_ref::<i32>)
+                    .copied()
+                    .ok_or(Error::InvalidData("invalid or missing width"))?;
+
+                let height = fields
+                    .get(1)
+                    .and_then(Value::downcast_ref::<i32>)
+                    .copied()
+                    .ok_or(Error::InvalidData("invalid or missing height"))?;
+
+                let pixel_values = fields
+                    .get(2)
+                    .and_then(Value::downcast_ref::<Array>)
+                    .ok_or(Error::InvalidData("invalid or missing pixel values"))?
+                    .get();
+
+                let pixels = pixel_values
+                    .iter()
+                    .map(|p| {
+                        p.downcast_ref::<u8>()
+                            .ok_or(Error::InvalidData("invalid pixel value"))
+                            .copied()
+                    })
+                    .collect::<Result<_>>()?;
+
+                Ok(IconPixmap {
+                    width,
+                    height,
+                    pixels,
+                })
             })
-        });
-
-        Some(pixmaps)
+            .collect()
     }
 }
 
@@ -186,7 +207,7 @@ impl IconPixmap {
 impl TryFrom<DBusProps> for StatusNotifierItem {
     type Error = Error;
 
-    fn try_from(props: DBusProps) -> Result<Self, Self::Error> {
+    fn try_from(props: DBusProps) -> Result<Self> {
         if let Some(id) = props.get_string("Id") {
             Ok(Self {
                 id,
@@ -227,8 +248,7 @@ impl DBusProps {
 
     fn get_icon_pixmap(&self, key: &str) -> Option<Vec<IconPixmap>> {
         self.get::<Array>(key)
-            .map(|arr| IconPixmap::from_array(arr))
-            .unwrap_or(None)
+            .and_then(|arr| IconPixmap::from_array(arr).ok())
     }
 
     // fn get_tooltip(&self) -> Option<Tooltip> {

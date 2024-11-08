@@ -16,4 +16,6 @@ pub enum Error {
     ZBusFdo(#[from] zbus::fdo::Error),
     #[error("zbus variant error")]
     ZBusVariant(#[from] zbus::zvariant::Error),
+    #[error("invalid data error")]
+    InvalidData(&'static str),
 }

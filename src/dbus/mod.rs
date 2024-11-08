@@ -7,7 +7,6 @@ pub mod notifier_item_proxy;
 pub mod notifier_watcher_proxy;
 pub mod status_notifier_watcher;
 
-
 /// Wrapper around map of properties fetched from a proxy.
 pub(crate) struct DBusProps(pub HashMap<String, OwnedValue>);
 
@@ -15,9 +14,9 @@ impl DBusProps {
     /// Gets `key` from the map if present,
     /// downcasting it to type `T`.
     pub fn get<'a, T>(&'a self, key: &str) -> Option<&'a T>
-        where
-            T: ?Sized,
-            &'a T: TryFrom<&'a Value<'a>>,
+    where
+        T: ?Sized,
+        &'a T: TryFrom<&'a Value<'a>>,
     {
         self.0.get(key).and_then(|value| value.downcast_ref::<T>())
     }
@@ -26,14 +25,14 @@ impl DBusProps {
     /// interpreting it as a `str`
     /// and converting it to a string.
     pub fn get_string(&self, key: &str) -> Option<String> {
-        self.get::<str>(key).map(|value| value.to_string())
+        self.get::<str>(key).map(ToString::to_string)
     }
 
     /// Gets `key` from the map if present,
     /// interpreting it as an `ObjectPath`,
     /// and converting it to a string.
     pub fn get_object_path(&self, key: &str) -> Option<String> {
-        self.get::<ObjectPath>(key).map(|value| value.to_string())
+        self.get::<ObjectPath>(key).map(ToString::to_string)
     }
 }
 
@@ -43,7 +42,7 @@ pub(crate) trait OwnedValueExt {
 
 impl OwnedValueExt for OwnedValue {
     fn to_string(&self) -> Option<String> {
-        self.downcast_ref::<str>().map(|s| s.to_string())
+        self.downcast_ref::<str>().map(ToString::to_string)
     }
 }
 
