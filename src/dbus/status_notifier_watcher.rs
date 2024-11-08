@@ -1,6 +1,11 @@
 use crate::names;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
-use zbus::{dbus_interface, export::ordered_stream::OrderedStreamExt, Interface, SignalContext};
+use zbus::{
+    dbus_interface, export::ordered_stream::OrderedStreamExt, Connection, Interface, MessageHeader,
+    SignalContext,
+};
 
 /// An instance of [`org.kde.StatusNotifierWatcher`]. It only tracks what tray items and trays
 /// exist, and doesn't have any logic for displaying items (for that, see [`Host`][`crate::Host`]).
@@ -12,12 +17,8 @@ use zbus::{dbus_interface, export::ordered_stream::OrderedStreamExt, Interface, 
 pub struct StatusNotifierWatcher {
     tasks: tokio::task::JoinSet<()>,
 
-    // Intentionally using std::sync::Mutex instead of tokio's async mutex, since we don't need to
-    // hold the mutex across an await.
-    //
-    // See <https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html#which-kind-of-mutex-should-you-use>
-    hosts: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
-    items: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    hosts: Arc<Mutex<HashSet<String>>>,
+    items: Arc<Mutex<HashSet<String>>>,
 }
 
 /// Implementation of the `StatusNotifierWatcher` service.
@@ -30,9 +31,9 @@ impl StatusNotifierWatcher {
     async fn register_status_notifier_host(
         &mut self,
         service: &str,
-        #[zbus(header)] hdr: zbus::MessageHeader<'_>,
-        #[zbus(connection)] con: &zbus::Connection,
-        #[zbus(signal_context)] ctxt: zbus::SignalContext<'_>,
+        #[zbus(header)] hdr: MessageHeader<'_>,
+        #[zbus(connection)] con: &Connection,
+        #[zbus(signal_context)] ctxt: SignalContext<'_>,
     ) -> zbus::fdo::Result<()> {
         // TODO: right now, we convert everything to the unique bus name (something like :1.234).
         //  However, it might make more sense to listen to the actual name they give us, so that if
@@ -45,7 +46,7 @@ impl StatusNotifierWatcher {
 
         let added_first = {
             // scoped around locking of hosts
-            let mut hosts = self.hosts.lock().unwrap(); // unwrap: mutex poisoning is okay
+            let mut hosts = self.hosts.lock().expect("mutex lock should succeed");
             if !hosts.insert(service.to_string()) {
                 // we're already tracking them
                 return Ok(());
@@ -70,7 +71,7 @@ impl StatusNotifierWatcher {
                 info!("lost host: {}", service);
 
                 let removed_last = {
-                    let mut hosts = hosts.lock().unwrap(); // unwrap: mutex poisoning is okay
+                    let mut hosts = hosts.lock().expect("mutex lock should succeed");
                     let did_remove = hosts.remove(service.as_str());
                     did_remove && hosts.is_empty()
                 };
@@ -96,36 +97,34 @@ impl StatusNotifierWatcher {
 
     /// StatusNotifierHostRegistered signal.
     #[dbus_interface(signal)]
-    async fn status_notifier_host_registered(ctxt: &zbus::SignalContext<'_>) -> zbus::Result<()>;
+    async fn status_notifier_host_registered(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
     /// StatusNotifierHostUnregistered signal
     #[dbus_interface(signal)]
-    async fn status_notifier_host_unregistered(ctxt: &zbus::SignalContext<'_>) -> zbus::Result<()>;
+    async fn status_notifier_host_unregistered(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
     /// IsStatusNotifierHostRegistered property
     #[dbus_interface(property)]
-    async fn is_status_notifier_host_registered(&self) -> bool {
-        let hosts = self.hosts.lock().unwrap(); // unwrap: mutex poisoning is okay
+    fn is_status_notifier_host_registered(&self) -> bool {
+        let hosts = self.hosts.lock().expect("mutex lock should succeed");
         !hosts.is_empty()
     }
-
-    // ------------------------------------------------------------------------
 
     /// RegisterStatusNotifierItem method
     async fn register_status_notifier_item(
         &mut self,
         service: &str,
-        #[zbus(header)] hdr: zbus::MessageHeader<'_>,
-        #[zbus(connection)] con: &zbus::Connection,
-        #[zbus(signal_context)] ctxt: zbus::SignalContext<'_>,
+        #[zbus(header)] hdr: MessageHeader<'_>,
+        #[zbus(connection)] con: &Connection,
+        #[zbus(signal_context)] ctxt: SignalContext<'_>,
     ) -> zbus::fdo::Result<()> {
         let (service, objpath) = parse_service(service, hdr, con).await?;
         let service = zbus::names::BusName::Unique(service);
 
-        let item = format!("{}{}", service, objpath);
+        let item = format!("{service}{objpath}");
 
         {
-            let mut items = self.items.lock().unwrap(); // unwrap: mutex poisoning is okay
+            let mut items = self.items.lock().expect("mutex lock should succeed");
             if !items.insert(item.clone()) {
                 // we're already tracking them
                 info!("new item: {} (duplicate)", item);
@@ -148,7 +147,7 @@ impl StatusNotifierWatcher {
                 debug!("gone item: {}", &item);
 
                 {
-                    let mut items = items.lock().unwrap(); // unwrap: mutex poisoning is okay
+                    let mut items = items.lock().expect("mutex lock should succeed");
                     items.remove(&item);
                 }
 
@@ -172,8 +171,8 @@ impl StatusNotifierWatcher {
     async fn unregister_status_notifier_item(
         &mut self,
         service: &str,
-        #[zbus(header)] hdr: zbus::MessageHeader<'_>,
-        #[zbus(connection)] con: &zbus::Connection,
+        #[zbus(header)] hdr: MessageHeader<'_>,
+        #[zbus(connection)] con: &Connection,
         #[zbus(signal_context)] context: SignalContext<'_>,
     ) -> zbus::fdo::Result<()> {
         debug!("received item unregister: {service}");
@@ -181,9 +180,12 @@ impl StatusNotifierWatcher {
         let (service, objpath) = parse_service(service, hdr, con).await?;
         let service = zbus::names::BusName::Unique(service);
 
-        let item = format!("{}{}", service, objpath);
+        let item = format!("{service}{objpath}");
 
-        self.items.lock().unwrap().remove(&item);
+        self.items
+            .lock()
+            .expect("mutex lock should succeed")
+            .remove(&item);
 
         if let Err(err) = Self::status_notifier_item_unregistered(&context, &item).await {
             error!("{err:?}");
@@ -208,12 +210,10 @@ impl StatusNotifierWatcher {
 
     /// RegisteredStatusNotifierItems property
     #[dbus_interface(property)]
-    async fn registered_status_notifier_items(&self) -> Vec<String> {
-        let items = self.items.lock().unwrap(); // unwrap: mutex poisoning is okay
+    fn registered_status_notifier_items(&self) -> Vec<String> {
+        let items = self.items.lock().expect("mutex lock should succeed");
         items.iter().cloned().collect()
     }
-
-    // ------------------------------------------------------------------------
 
     /// ProtocolVersion property
     #[dbus_interface(property)]
@@ -224,8 +224,8 @@ impl StatusNotifierWatcher {
 
 impl StatusNotifierWatcher {
     /// Create a new Watcher.
-    pub fn new() -> StatusNotifierWatcher {
-        Default::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Attach and run the Watcher (in the background) on a connection.
@@ -243,7 +243,6 @@ impl StatusNotifierWatcher {
             .request_name_with_flags(names::WATCHER_BUS, flags.into_iter().collect())
             .await
         {
-            Ok(zbus::fdo::RequestNameReply::PrimaryOwner) => Ok(()),
             Ok(_) | Err(zbus::Error::NameTaken) => Ok(()), // defer to existing
             Err(e) => Err(e),
         }
@@ -252,7 +251,7 @@ impl StatusNotifierWatcher {
     /// Equivalent to `is_status_notifier_host_registered_invalidate`, but without requiring
     /// `self`.
     async fn is_status_notifier_host_registered_refresh(
-        ctxt: &zbus::SignalContext<'_>,
+        ctxt: &SignalContext<'_>,
     ) -> zbus::Result<()> {
         zbus::fdo::Properties::properties_changed(
             ctxt,
@@ -265,7 +264,7 @@ impl StatusNotifierWatcher {
 
     /// Equivalent to `registered_status_notifier_items_invalidate`, but without requiring `self`.
     async fn registered_status_notifier_items_refresh(
-        ctxt: &zbus::SignalContext<'_>,
+        ctxt: &SignalContext<'_>,
     ) -> zbus::Result<()> {
         zbus::fdo::Properties::properties_changed(
             ctxt,
@@ -286,8 +285,8 @@ impl StatusNotifierWatcher {
 /// status items pass non-conforming values. One common one is just the object path.
 async fn parse_service<'a>(
     service: &'a str,
-    hdr: zbus::MessageHeader<'_>,
-    con: &zbus::Connection,
+    hdr: MessageHeader<'_>,
+    con: &Connection,
 ) -> zbus::fdo::Result<(zbus::names::UniqueName<'static>, &'a str)> {
     if service.starts_with('/') {
         // they sent us just the object path
@@ -325,9 +324,9 @@ async fn parse_service<'a>(
     }
 }
 
-/// Wait for a DBus service to disappear
+/// Wait for a `DBus` service to disappear
 async fn wait_for_service_exit(
-    con: &zbus::Connection,
+    con: &Connection,
     service: zbus::names::BusName<'_>,
 ) -> zbus::fdo::Result<()> {
     let dbus = zbus::fdo::DBusProxy::new(con).await?;

@@ -21,8 +21,8 @@ use zbus::zvariant::Value;
 use zbus::{Connection, Message};
 
 /// An event emitted by the client
-/// representing a change from either the StatusNotifierItem
-/// or DBusMenu protocols.
+/// representing a change from either the `StatusNotifierItem`
+/// or `DBusMenu` protocols.
 #[derive(Debug, Clone)]
 pub enum Event {
     /// A new `StatusNotifierItem` was added.
@@ -86,6 +86,13 @@ impl Client {
     /// If the initialization fails for any reason,
     /// for example if unable to connect to the bus,
     /// this method will return an error.
+    ///
+    /// # Panics
+    ///
+    /// If the generated well-known name is invalid, the library will panic
+    /// as this indicates a major bug.
+    ///
+    /// Likewise, the spawned tasks may panic if they cannot get a `Mutex` lock.
     pub async fn new() -> crate::error::Result<Self> {
         let connection = Connection::session().await?;
         let (tx, rx) = broadcast::channel(32);
@@ -104,7 +111,7 @@ impl Client {
             use zbus::fdo::RequestNameReply::*;
 
             i += 1;
-            let wellknown = format!("org.freedesktop.StatusNotifierHost-{}-{}", pid, i);
+            let wellknown = format!("org.freedesktop.StatusNotifierHost-{pid}-{i}");
             let wellknown: zbus::names::WellKnownName = wellknown
                 .try_into()
                 .expect("generated well-known name is invalid");
@@ -115,8 +122,7 @@ impl Client {
                 .await?
             {
                 PrimaryOwner => break wellknown,
-                Exists => {}
-                AlreadyOwner => {}
+                Exists | AlreadyOwner => {}
                 InQueue => unreachable!(
                     "request_name_with_flags returned InQueue even though we specified DoNotQueue"
                 ),
@@ -187,16 +193,18 @@ impl Client {
 
             spawn(async move {
                 while let Some(thing) = stream.next().await {
-                    let body = thing.args().unwrap();
+                    let body = thing.args()?;
                     if body.name == names::WATCHER_BUS {
-                        let mut items = items.lock().unwrap();
+                        let mut items = items.lock().expect("mutex lock should succeed");
                         let keys = items.keys().cloned().collect::<Vec<_>>();
                         for address in keys {
                             items.remove(&address);
-                            tx.send(Event::Remove(address)).unwrap();
+                            tx.send(Event::Remove(address))?;
                         }
                     }
                 }
+
+                Ok::<(), Error>(())
             });
         }
 
@@ -230,7 +238,7 @@ impl Client {
 
         items
             .lock()
-            .expect("to get lock")
+            .expect("mutex lock should succeed")
             .insert(destination.into(), (properties.clone(), None));
 
         tx.send(Event::Add(
@@ -341,7 +349,7 @@ impl Client {
         }
     }
 
-    /// Gets the update event for a DBus properties change message.
+    /// Gets the update event for a `DBus` properties change message.
     async fn get_update_event(
         change: Arc<Message>,
         properties_proxy: &PropertiesProxy<'_>,
@@ -417,10 +425,14 @@ impl Client {
             .build()
             .await?;
 
-        let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await.unwrap();
+        let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
         let menu = TrayMenu::try_from(menu)?;
 
-        if let Some((_, menu_cache)) = items.lock().expect("to get lock").get_mut(&destination) {
+        if let Some((_, menu_cache)) = items
+            .lock()
+            .expect("mutex lock should succeed")
+            .get_mut(&destination)
+        {
             menu_cache.replace(menu.clone());
         } else {
             error!("could not find item in state");
@@ -438,11 +450,13 @@ impl Client {
 
             match change.member() {
                 Some(name) if name == "LayoutUpdated" => {
-                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await.unwrap();
+                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
                     let menu = TrayMenu::try_from(menu)?;
 
-                    if let Some((_, menu_cache)) =
-                        items.lock().expect("to get lock").get_mut(&destination)
+                    if let Some((_, menu_cache)) = items
+                        .lock()
+                        .expect("mutex lock should succeed")
+                        .get_mut(&destination)
                     {
                         menu_cache.replace(menu.clone());
                     } else {
@@ -465,27 +479,37 @@ impl Client {
     /// returning a new receiver.
     ///
     /// Once the client is dropped, the receiver will close.
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.tx.subscribe()
     }
 
     /// Gets all current items, including their menus if present.
+    #[must_use]
     pub fn items(&self) -> Arc<Mutex<State>> {
         self.items.clone()
     }
 
     /// Sends an activate request for a menu item.
+    ///
+    /// # Errors
+    ///
+    /// The method will return an error if the connection to the `DBus` object fails,
+    /// or if sending the event fails for any reason.
+    ///
+    /// # Panics
+    ///
+    /// If the system time is somehow before the Unix epoch.
     pub async fn activate(&self, req: ActivateRequest) -> crate::error::Result<()> {
         let dbus_menu_proxy = DBusMenuProxy::builder(&self.connection)
-            .destination(req.address)
-            .unwrap()
+            .destination(req.address)?
             .path(req.menu_path)?
             .build()
             .await?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("time to flow forwards");
+            .expect("time should flow forwards");
 
         dbus_menu_proxy
             .event(

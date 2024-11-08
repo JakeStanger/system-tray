@@ -1,6 +1,6 @@
 # System Tray
 
-An async implementation of the StatusNotifierItem and DbusMenu protocols for building system trays.
+An async implementation of the `StatusNotifierItem` and `DbusMenu` protocols for building system trays.
 
 Requires Tokio.
 

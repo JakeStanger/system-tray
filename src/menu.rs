@@ -1,5 +1,7 @@
 use crate::dbus::dbus_menu_proxy::MenuLayout;
+use crate::error::{Error, Result};
 use serde::Deserialize;
+use zbus::zvariant;
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
@@ -157,15 +159,15 @@ impl From<&str> for Disposition {
 }
 
 impl TryFrom<MenuLayout> for TrayMenu {
-    type Error = zbus::zvariant::Error;
+    type Error = Error;
 
-    fn try_from(value: MenuLayout) -> Result<Self, Self::Error> {
+    fn try_from(value: MenuLayout) -> Result<Self> {
         let submenus = value
             .fields
             .submenus
             .iter()
             .map(MenuItem::try_from)
-            .collect::<Result<_, _>>()?;
+            .collect::<std::result::Result<_, _>>()?;
 
         Ok(Self {
             id: value.id,
@@ -175,12 +177,12 @@ impl TryFrom<MenuLayout> for TrayMenu {
 }
 
 impl TryFrom<&OwnedValue> for MenuItem {
-    type Error = zbus::zvariant::Error;
+    type Error = Error;
 
-    fn try_from(value: &OwnedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &OwnedValue) -> Result<Self> {
         let structure = value
             .downcast_ref::<Structure>()
-            .ok_or_else(|| Self::Error::IncorrectType)?;
+            .ok_or(Error::ZBusVariant(zvariant::Error::IncorrectType))?;
 
         let mut fields = structure.fields().iter();
 
@@ -207,7 +209,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .map(|label| label.replace('_', ""));
 
             if let Some(enabled) = dict.get::<str, bool>("enabled")? {
-                menu.enabled = *enabled
+                menu.enabled = *enabled;
             }
 
             if let Some(visible) = dict.get::<str, bool>("visible")? {
@@ -216,14 +218,18 @@ impl TryFrom<&OwnedValue> for MenuItem {
 
             menu.icon_name = dict.get::<str, str>("icon-name")?.map(str::to_string);
 
-            menu.icon_data = dict.get::<str, Array>("icon-data").ok().flatten().map(|a| {
-                a.iter()
-                    .map(|v| match v {
-                        Value::U8(n) => *n,
-                        _ => panic!(),
+            if let Some(array) = dict.get::<str, Array>("icon-data")? {
+                let array = array
+                    .iter()
+                    .map(|v| {
+                        v.downcast_ref::<u8>()
+                            .ok_or(Error::InvalidData("invalid u8"))
+                            .copied()
                     })
-                    .collect()
-            });
+                    .collect::<Result<Vec<_>>>()?;
+
+                menu.icon_data = Some(array);
+            }
 
             if let Some(disposition) = dict
                 .get::<str, str>("disposition")
@@ -253,7 +259,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .ok()
                 .flatten()
                 .map(MenuType::from)
-                .unwrap_or_default()
+                .unwrap_or_default();
         };
 
         if let Some(Value::Array(array)) = fields.next() {
