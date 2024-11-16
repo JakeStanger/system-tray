@@ -50,6 +50,9 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install build deps
+        run: ./.github/scripts/ubuntu_setup.sh
+
       - name: Publish crate
         uses: katyo/publish-crates@v1
         with:

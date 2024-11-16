@@ -1,6 +1,7 @@
-use crate::dbus::dbus_menu_proxy::MenuLayout;
+use crate::dbus::dbus_menu_proxy::{MenuLayout, PropertiesUpdate, UpdatedProps};
 use crate::error::{Error, Result};
 use serde::Deserialize;
+use std::collections::HashMap;
 use zbus::zvariant;
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
@@ -70,6 +71,46 @@ pub struct MenuItem {
     pub disposition: Disposition,
     /// Nested submenu items belonging to this item.
     pub submenu: Vec<MenuItem>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MenuDiff {
+    pub id: i32,
+    pub update: MenuItemUpdate,
+    pub remove: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MenuItemUpdate {
+    /// Text of the item, except that:
+    ///  - two consecutive underscore characters "__" are displayed as a
+    ///    single underscore,
+    ///  - any remaining underscore characters are not displayed at all,
+    ///  - the first of those remaining underscore characters (unless it is
+    ///    the last character in the string) indicates that the following
+    ///    character is the access key.
+    pub label: Option<Option<String>>,
+    /// Whether the item can be activated or not.
+    pub enabled: Option<bool>,
+    /// True if the item is visible in the menu.
+    pub visible: Option<bool>,
+    /// Icon name of the item, following the freedesktop.org icon spec.
+    pub icon_name: Option<Option<String>>,
+    /// PNG data of the icon.
+    pub icon_data: Option<Option<Vec<u8>>>,
+    /// Describe the current state of a "togglable" item.
+    /// See [`ToggleState`].
+    ///
+    /// # Note:
+    /// The implementation does not itself handle ensuring that only one
+    /// item in a radio group is set to "on", or that a group does not have
+    /// "on" and "indeterminate" items simultaneously; maintaining this
+    /// policy is up to the toolkit wrappers.
+    pub toggle_state: Option<ToggleState>,
+    /// How the menuitem feels the information it's displaying to the
+    /// user should be presented.
+    /// See [`Disposition`]
+    pub disposition: Option<Disposition>,
 }
 
 #[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
@@ -219,16 +260,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
             menu.icon_name = dict.get::<str, str>("icon-name")?.map(str::to_string);
 
             if let Some(array) = dict.get::<str, Array>("icon-data")? {
-                let array = array
-                    .iter()
-                    .map(|v| {
-                        v.downcast_ref::<u8>()
-                            .ok_or(Error::InvalidData("invalid u8"))
-                            .copied()
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                menu.icon_data = Some(array);
+                menu.icon_data = Some(get_icon_data(array)?);
             }
 
             if let Some(disposition) = dict
@@ -275,4 +307,92 @@ impl TryFrom<&OwnedValue> for MenuItem {
 
         Ok(menu)
     }
+}
+
+impl TryFrom<PropertiesUpdate<'_>> for Vec<MenuDiff> {
+    type Error = Error;
+
+    fn try_from(value: PropertiesUpdate<'_>) -> Result<Self> {
+        let mut res = HashMap::new();
+
+        for updated in value.updated {
+            let id = updated.id;
+            let update = MenuDiff {
+                id,
+                update: updated.try_into()?,
+                ..Default::default()
+            };
+
+            res.insert(id, update);
+        }
+
+        for removed in value.removed {
+            let update = res.entry(removed.id).or_insert_with(|| MenuDiff {
+                id: removed.id,
+                ..Default::default()
+            });
+
+            update.remove = removed.fields.iter().map(ToString::to_string).collect();
+        }
+
+        Ok(res.into_values().collect())
+    }
+}
+
+impl TryFrom<UpdatedProps<'_>> for MenuItemUpdate {
+    type Error = Error;
+
+    fn try_from(value: UpdatedProps) -> Result<Self> {
+        let dict = value.fields;
+
+        let icon_data =
+            if let Some(arr) = dict.get("icon-data").and_then(Value::downcast_ref::<Array>) {
+                Some(Some(get_icon_data(arr)?))
+            } else {
+                None
+            };
+
+        Ok(Self {
+            label: dict
+                .get("label")
+                .map(|v| v.downcast_ref::<str>().map(ToString::to_string)),
+
+            enabled: dict
+                .get("enabled")
+                .and_then(Value::downcast_ref::<bool>)
+                .copied(),
+
+            visible: dict
+                .get("visible")
+                .and_then(Value::downcast_ref::<bool>)
+                .copied(),
+
+            icon_name: dict
+                .get("icon-name")
+                .map(|v| v.downcast_ref::<str>().map(ToString::to_string)),
+
+            icon_data,
+
+            toggle_state: dict
+                .get("toggle-state")
+                .and_then(Value::downcast_ref::<i32>)
+                .map(|value| ToggleState::from(*value)),
+
+            disposition: dict
+                .get("disposition")
+                .and_then(Value::downcast_ref::<str>)
+                .map(Disposition::from),
+        })
+    }
+}
+
+fn get_icon_data(array: &Array) -> Result<Vec<u8>> {
+    array
+        .iter()
+        .map(|v| {
+            v.downcast_ref::<u8>()
+                .ok_or(Error::InvalidData("invalid u8"))
+                .copied()
+        })
+        .collect::<Result<Vec<_>>>()
 }

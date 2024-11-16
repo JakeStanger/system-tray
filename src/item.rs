@@ -191,18 +191,49 @@ impl IconPixmap {
     }
 }
 
-// /// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
-// /// (or by any other mean the visualization consider appropriate.
-// #[derive(Debug, Clone, Deserialize)]
-// pub struct Tooltip {
-//     // TODO
-// }
-//
-// impl From<&Structure<'_>> for Tooltip {
-//     fn from(value: &Structure) -> Self {
-//         todo!()
-//     }
-// }
+/// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
+/// (or by any other mean the visualization consider appropriate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Tooltip {
+    pub icon_name: String,
+    pub icon_data: Vec<IconPixmap>,
+    pub title: String,
+    pub description: String,
+}
+
+impl TryFrom<&Structure<'_>> for Tooltip {
+    type Error = Error;
+
+    fn try_from(value: &Structure) -> Result<Self> {
+        let fields = value.fields();
+
+        Ok(Self {
+            icon_name: fields
+                .first()
+                .and_then(Value::downcast_ref::<str>)
+                .map(ToString::to_string)
+                .ok_or(Error::InvalidData("icon_name"))?,
+
+            icon_data: fields
+                .get(1)
+                .and_then(Value::downcast_ref::<Array>)
+                .map(IconPixmap::from_array)
+                .ok_or(Error::InvalidData("icon_data"))??,
+
+            title: fields
+                .get(2)
+                .and_then(Value::downcast_ref::<str>)
+                .map(ToString::to_string)
+                .ok_or(Error::InvalidData("title"))?,
+
+            description: fields
+                .get(3)
+                .and_then(Value::downcast_ref::<str>)
+                .map(ToString::to_string)
+                .ok_or(Error::InvalidData("description"))?,
+        })
+    }
+}
 
 impl TryFrom<DBusProps> for StatusNotifierItem {
     type Error = Error;
@@ -250,9 +281,4 @@ impl DBusProps {
         self.get::<Array>(key)
             .and_then(|arr| IconPixmap::from_array(arr).ok())
     }
-
-    // fn get_tooltip(&self) -> Option<Tooltip> {
-    //     self.get::<Structure>("Tooltip")
-    //         .map(Tooltip::from)
-    // }
 }

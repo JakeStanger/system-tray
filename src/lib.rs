@@ -38,6 +38,9 @@ pub mod item;
 /// `DBusMenu` menu representation.
 pub mod menu;
 
+#[cfg(feature = "dbusmenu-gtk3")]
+pub mod gtk_menu;
+
 pub(crate) mod names {
     pub const WATCHER_BUS: &str = "org.kde.StatusNotifierWatcher";
     pub const WATCHER_OBJECT: &str = "/StatusNotifierWatcher";

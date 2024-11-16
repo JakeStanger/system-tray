@@ -1,23 +1,24 @@
-use crate::dbus::dbus_menu_proxy::DBusMenuProxy;
+use crate::dbus::dbus_menu_proxy::{DBusMenuProxy, PropertiesUpdate};
 use crate::dbus::notifier_item_proxy::StatusNotifierItemProxy;
 use crate::dbus::notifier_watcher_proxy::StatusNotifierWatcherProxy;
 use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
 use crate::error::Error;
-use crate::item::{self, Status, StatusNotifierItem};
-use crate::menu::TrayMenu;
+use crate::item::{self, Status, StatusNotifierItem, Tooltip};
+use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
-use tracing::{debug, error, warn};
+use tokio::time::timeout;
+use tracing::{debug, error, trace, warn};
 use zbus::export::futures_util::StreamExt;
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
-use zbus::zvariant::Value;
+use zbus::zvariant::{Structure, Value};
 use zbus::{Connection, Message};
 
 /// An event emitted by the client
@@ -43,8 +44,16 @@ pub enum UpdateEvent {
     OverlayIcon(Option<String>),
     Status(Status),
     Title(Option<String>),
-    // Tooltip(Option<Tooltip>),
+    Tooltip(Option<Tooltip>),
+    /// A menu layout has changed.
+    /// The entire layout is sent.
     Menu(TrayMenu),
+    /// One or more menu properties have changed.
+    /// Only the updated properties are sent.
+    MenuDiff(Vec<MenuDiff>),
+    /// A new menu has connected to the item.
+    /// Its name on bus is sent.
+    MenuConnect(String),
 }
 
 /// A request to 'activate' one of the menu items,
@@ -262,6 +271,12 @@ impl Client {
 
         if let Some(menu) = properties.menu {
             let destination = destination.to_string();
+
+            tx.send(Event::Update(
+                destination.clone(),
+                UpdateEvent::MenuConnect(menu.clone()),
+            ))?;
+
             spawn(async move {
                 Self::watch_menu(destination, &menu, &connection, tx, items).await?;
                 Ok::<(), Error>(())
@@ -362,6 +377,7 @@ impl Client {
             "NewOverlayIcon" => "OverlayIconName",
             "NewStatus" => "Status",
             "NewTitle" => "Title",
+            "NewToolTip" => "ToolTip",
             _ => &member.as_str()["New".len()..],
         };
 
@@ -395,11 +411,12 @@ impl Client {
                     .unwrap_or_default(),
             )),
             "NewTitle" => Some(Title(property.to_string())),
-            // "NewTooltip" => Some(Tooltip(
-            //     property
-            //         .downcast_ref::<Structure>()
-            //         .map(status_notifier_item::Tooltip::from),
-            // )),
+            "NewToolTip" => Some(Tooltip(
+                property
+                    .downcast_ref::<Structure>()
+                    .map(crate::item::Tooltip::try_from)?
+                    .ok(),
+            )),
             _ => {
                 warn!("received unhandled update event: {member}");
                 None
@@ -443,14 +460,31 @@ impl Client {
             UpdateEvent::Menu(menu),
         ))?;
 
-        let mut props_changed = dbus_menu_proxy.receive_all_signals().await?;
+        let mut layout_updated = dbus_menu_proxy.receive_layout_updated().await?;
+        let mut properties_updated = dbus_menu_proxy.receive_items_properties_updated().await?;
 
-        while let Some(change) = props_changed.next().await {
-            debug!("[{destination}{menu_path}] received menu change: {change:?}");
+        loop {
+            tokio::select!(
+                Some(_) = layout_updated.next() => {
+                    debug!("[{destination}{menu_path}] layout update");
 
-            match change.member() {
-                Some(name) if name == "LayoutUpdated" => {
-                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
+                    let get_layout = dbus_menu_proxy.get_layout(0, 10, &[]);
+
+                    let menu = match timeout(Duration::from_secs(1), get_layout).await {
+                        Ok(Ok(menu)) => {
+                            debug!("got new menu layout");
+                            menu
+                        }
+                        Ok(Err(err)) => {
+                            error!("error fetching layout: {err:?}");
+                            break;
+                        }
+                        Err(_) => {
+                            error!("Timeout getting layout");
+                            break;
+                        }
+                    };
+
                     let menu = TrayMenu::try_from(menu)?;
 
                     if let Some((_, menu_cache)) = items
@@ -463,13 +497,25 @@ impl Client {
                         error!("could not find item in state");
                     }
 
+                    debug!("sending new menu for '{destination}'");
+                    trace!("new menu for '{destination}': {menu:?}");
                     tx.send(Event::Update(
                         destination.to_string(),
                         UpdateEvent::Menu(menu),
                     ))?;
                 }
-                _ => {}
-            }
+                Some(change) = properties_updated.next() => {
+                    let update = change.body::<PropertiesUpdate>()?;
+                    let diffs = Vec::try_from(update)?;
+
+                    tx.send(Event::Update(
+                        destination.to_string(),
+                        UpdateEvent::MenuDiff(diffs),
+                    ))?;
+
+                    // FIXME: Menu cache gonna be out of sync
+                }
+            );
         }
 
         Ok(())
@@ -511,14 +557,16 @@ impl Client {
             .duration_since(UNIX_EPOCH)
             .expect("time should flow forwards");
 
-        dbus_menu_proxy
-            .event(
-                req.submenu_id,
-                "clicked",
-                &Value::I32(32),
-                timestamp.as_secs() as u32,
-            )
-            .await?;
+        let click_event = dbus_menu_proxy.event(
+            req.submenu_id,
+            "clicked",
+            &Value::I32(0),
+            timestamp.as_secs() as u32,
+        );
+
+        if timeout(Duration::from_secs(1), click_event).await.is_err() {
+            error!("Timed out sending activate event");
+        }
 
         Ok(())
     }
@@ -533,7 +581,7 @@ fn parse_address(address: &str) -> (&str, String) {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
