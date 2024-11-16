@@ -271,6 +271,12 @@ impl Client {
 
         if let Some(menu) = properties.menu {
             let destination = destination.to_string();
+
+            tx.send(Event::Update(
+                destination.clone(),
+                UpdateEvent::MenuConnect(menu.clone()),
+            ))?;
+
             spawn(async move {
                 Self::watch_menu(destination, &menu, &connection, tx, items).await?;
                 Ok::<(), Error>(())
