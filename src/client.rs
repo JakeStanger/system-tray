@@ -575,7 +575,7 @@ fn parse_address(address: &str) -> (&str, String) {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
