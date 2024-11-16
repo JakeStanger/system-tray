@@ -21,6 +21,25 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+
+  clippy-base:
+    runs-on: ubuntu-latest
+    name: 'Clippy (Base features)'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        name: Cache dependencies
+
+      - name: Install build deps
+        run: ./.github/scripts/ubuntu_setup.sh
+
+      - name: Clippy
+        run: cargo clippy --no-default-features
+        env:
+          RUSTFLAGS: '-W clippy::unwrap_used'
+
+
   clippy-all:
     runs-on: ubuntu-latest
     name: 'Clippy (All features)'
@@ -29,6 +48,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         name: Cache dependencies
+
+      - name: Install build deps
+        run: ./.github/scripts/ubuntu_setup.sh
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features
@@ -46,8 +68,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         name: Cache dependencies
 
+      - name: Install build deps
+        run: ./.github/scripts/ubuntu_setup.sh
+
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --all-features --verbose
 
       - name: Run tests
         uses: actions-rs/cargo@v1
