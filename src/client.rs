@@ -1,23 +1,24 @@
-use crate::dbus::dbus_menu_proxy::DBusMenuProxy;
+use crate::dbus::dbus_menu_proxy::{DBusMenuProxy, PropertiesUpdate};
 use crate::dbus::notifier_item_proxy::StatusNotifierItemProxy;
 use crate::dbus::notifier_watcher_proxy::StatusNotifierWatcherProxy;
 use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
 use crate::error::Error;
-use crate::item::{self, Status, StatusNotifierItem};
-use crate::menu::TrayMenu;
+use crate::item::{self, Status, StatusNotifierItem, Tooltip};
+use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
-use tracing::{debug, error, warn};
+use tokio::time::timeout;
+use tracing::{debug, error, trace, warn};
 use zbus::export::futures_util::StreamExt;
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
-use zbus::zvariant::Value;
+use zbus::zvariant::{Structure, Value};
 use zbus::{Connection, Message};
 
 /// An event emitted by the client
@@ -44,7 +45,12 @@ pub enum UpdateEvent {
     Status(Status),
     Title(Option<String>),
     Tooltip(Option<Tooltip>),
+    /// A menu layout has changed.
+    /// The entire layout is sent.
     Menu(TrayMenu),
+    /// One or more menu properties have changed.
+    /// Only the updated properties are sent.
+    MenuDiff(Vec<MenuDiff>),
 }
 
 /// A request to 'activate' one of the menu items,
@@ -445,7 +451,13 @@ impl Client {
             UpdateEvent::Menu(menu),
         ))?;
 
-        let mut props_changed = dbus_menu_proxy.receive_all_signals().await?;
+        let mut layout_updated = dbus_menu_proxy.receive_layout_updated().await?;
+        let mut properties_updated = dbus_menu_proxy.receive_items_properties_updated().await?;
+
+        loop {
+            tokio::select!(
+                Some(_) = layout_updated.next() => {
+                    debug!("[{destination}{menu_path}] layout update");
 
         while let Some(change) = props_changed.next().await {
             debug!("[{destination}{menu_path}] received menu change: {change:?}");
@@ -465,13 +477,25 @@ impl Client {
                         error!("could not find item in state");
                     }
 
+                    debug!("sending new menu for '{destination}'");
+                    trace!("new menu for '{destination}': {menu:?}");
                     tx.send(Event::Update(
                         destination.to_string(),
                         UpdateEvent::Menu(menu),
                     ))?;
                 }
-                _ => {}
-            }
+                Some(change) = properties_updated.next() => {
+                    let update = change.body::<PropertiesUpdate>()?;
+                    let diffs = Vec::try_from(update)?;
+
+                    tx.send(Event::Update(
+                        destination.to_string(),
+                        UpdateEvent::MenuDiff(diffs),
+                    ))?;
+
+                    // FIXME: Menu cache gonna be out of sync
+                }
+            );
         }
 
         Ok(())

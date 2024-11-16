@@ -34,32 +34,26 @@ pub(crate) struct SubMenuLayout {
 #[allow(dead_code)]
 type GroupProperties = Vec<(i32, HashMap<String, zbus::zvariant::OwnedValue>)>;
 
-// #[derive(Deserialize, Type, Debug, Clone)]
-// pub struct LayoutUpdate {
-//     revision: u32,
-//     parent: i32,
-// }
-//
-// #[derive(Deserialize, Type, Debug, Clone)]
-// pub struct PropertiesUpdate<'a> {
-//     #[serde(borrow)]
-//     updated: Vec<UpdatedProps<'a>>,
-//     removed: Vec<RemovedProps<'a>>,
-// }
+#[derive(Deserialize, Type, Debug, Clone)]
+pub struct PropertiesUpdate<'a> {
+    #[serde(borrow)]
+    pub(crate) updated: Vec<UpdatedProps<'a>>,
+    pub(crate) removed: Vec<RemovedProps<'a>>,
+}
 
-// #[derive(Deserialize, Type, Debug, Clone)]
-// pub struct UpdatedProps<'a> {
-//     id: i32,
-//     #[serde(borrow)]
-//     fields: HashMap<&'a str, Value<'a>>,
-// }
-//
-// #[derive(Deserialize, Type, Debug, Clone)]
-// pub struct RemovedProps<'a> {
-//     id: i32,
-//     #[serde(borrow)]
-//     fields: Vec<&'a str>,
-// }
+#[derive(Deserialize, Type, Debug, Clone)]
+pub struct UpdatedProps<'a> {
+    pub(crate) id: i32,
+    #[serde(borrow)]
+    pub(crate) fields: HashMap<&'a str, Value<'a>>,
+}
+
+#[derive(Deserialize, Type, Debug, Clone)]
+pub struct RemovedProps<'a> {
+    pub(crate) id: i32,
+    #[serde(borrow)]
+    pub(crate) fields: Vec<&'a str>,
+}
 
 #[dbus_proxy(interface = "com.canonical.dbusmenu", assume_defaults = true)]
 trait DBusMenu {
