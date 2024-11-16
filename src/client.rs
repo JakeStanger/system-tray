@@ -51,6 +51,9 @@ pub enum UpdateEvent {
     /// One or more menu properties have changed.
     /// Only the updated properties are sent.
     MenuDiff(Vec<MenuDiff>),
+    /// A new menu has connected to the item.
+    /// Its name on bus is sent.
+    MenuConnect(String),
 }
 
 /// A request to 'activate' one of the menu items,
@@ -459,12 +462,23 @@ impl Client {
                 Some(_) = layout_updated.next() => {
                     debug!("[{destination}{menu_path}] layout update");
 
-        while let Some(change) = props_changed.next().await {
-            debug!("[{destination}{menu_path}] received menu change: {change:?}");
+                    let get_layout = dbus_menu_proxy.get_layout(0, 10, &[]);
 
-            match change.member() {
-                Some(name) if name == "LayoutUpdated" => {
-                    let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
+                    let menu = match timeout(Duration::from_secs(1), get_layout).await {
+                        Ok(Ok(menu)) => {
+                            debug!("got new menu layout");
+                            menu
+                        }
+                        Ok(Err(err)) => {
+                            error!("error fetching layout: {err:?}");
+                            break;
+                        }
+                        Err(_) => {
+                            error!("Timeout getting layout");
+                            break;
+                        }
+                    };
+
                     let menu = TrayMenu::try_from(menu)?;
 
                     if let Some((_, menu_cache)) = items
@@ -537,14 +551,16 @@ impl Client {
             .duration_since(UNIX_EPOCH)
             .expect("time should flow forwards");
 
-        dbus_menu_proxy
-            .event(
-                req.submenu_id,
-                "clicked",
-                &Value::I32(32),
-                timestamp.as_secs() as u32,
-            )
-            .await?;
+        let click_event = dbus_menu_proxy.event(
+            req.submenu_id,
+            "clicked",
+            &Value::I32(0),
+            timestamp.as_secs() as u32,
+        );
+
+        if timeout(Duration::from_secs(1), click_event).await.is_err() {
+            error!("Timed out sending activate event");
+        }
 
         Ok(())
     }
