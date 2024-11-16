@@ -43,7 +43,7 @@ pub enum UpdateEvent {
     OverlayIcon(Option<String>),
     Status(Status),
     Title(Option<String>),
-    // Tooltip(Option<Tooltip>),
+    Tooltip(Option<Tooltip>),
     Menu(TrayMenu),
 }
 
@@ -362,6 +362,7 @@ impl Client {
             "NewOverlayIcon" => "OverlayIconName",
             "NewStatus" => "Status",
             "NewTitle" => "Title",
+            "NewToolTip" => "ToolTip",
             _ => &member.as_str()["New".len()..],
         };
 
@@ -395,11 +396,12 @@ impl Client {
                     .unwrap_or_default(),
             )),
             "NewTitle" => Some(Title(property.to_string())),
-            // "NewTooltip" => Some(Tooltip(
-            //     property
-            //         .downcast_ref::<Structure>()
-            //         .map(status_notifier_item::Tooltip::from),
-            // )),
+            "NewToolTip" => Some(Tooltip(
+                property
+                    .downcast_ref::<Structure>()
+                    .map(crate::item::Tooltip::try_from)?
+                    .ok(),
+            )),
             _ => {
                 warn!("received unhandled update event: {member}");
                 None
