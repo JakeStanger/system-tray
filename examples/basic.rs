@@ -5,6 +5,7 @@ async fn main() {
     let client = Client::new().await.unwrap();
     let mut tray_rx = client.subscribe();
 
+    #[allow(unused_variables)]
     let initial_items = client.items();
 
     // do something with initial items...
