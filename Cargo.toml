@@ -13,7 +13,7 @@ default = []
 dbusmenu-gtk3 = ["dep:gtk", "dep:dbusmenu-gtk3-sys"]
 
 [dependencies]
-zbus = "3.15.2"
+zbus = { version = "3.15.2", features = ["tokio"] }
 tracing = "0.1.40"
 serde = { version = "1.0.197", features = ["derive"] }
 tokio = { version = "1.36.0", features = ["rt", "sync", "macros", "time"] }
