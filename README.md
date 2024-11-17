@@ -49,3 +49,9 @@ fn on_update(update: system_tray::Event) {
 
 > [!NOTE]
 > This feature is disabled by default to reduce compilation times.
+
+## Attributions
+
+Some of the code in this repository, namely the SNI host, is taken from [eww](https://github.com/elkowar/eww/blob/50ec181fc7ff2a68d6330e8897de2c5179575935/crates/notifier_host/src/host.rs) 
+under [MIT](https://github.com/elkowar/eww/blob/master/LICENSE).
+Many thanks to elkowar. 
