@@ -548,7 +548,6 @@ impl Client {
         &self,
         address: String,
         menu_path: String,
-        // ) -> Result<DBusMenuProxy<'_>, zbus::Error> {
     ) -> crate::error::Result<DBusMenuProxy<'_>> {
         let proxy = DBusMenuProxy::builder(&self.connection)
             .destination(address)?
