@@ -21,6 +21,8 @@ use zbus::names::InterfaceName;
 use zbus::zvariant::{Structure, Value};
 use zbus::{Connection, Message};
 
+use self::names::ITEM_OBJECT;
+
 /// An event emitted by the client
 /// representing a change from either the `StatusNotifierItem`
 /// or `DBusMenu` protocols.
@@ -59,10 +61,19 @@ pub enum UpdateEvent {
 /// A request to 'activate' one of the menu items,
 /// typically sent when it is clicked.
 #[derive(Debug, Clone)]
-pub struct ActivateRequest {
-    pub address: String,
-    pub menu_path: String,
-    pub submenu_id: i32,
+pub enum ActivateRequest {
+    /// Submenu ID
+    MenuItem {
+        address: String,
+        menu_path: String,
+        submenu_id: i32,
+    },
+    /// Default activation for the tray.
+    /// The parameter(x and y) represents screen coordinates and is to be considered an hint to the item where to show eventual windows (if any).
+    Default { address: String, x: i32, y: i32 },
+    /// Secondary activation(less important) for the tray.
+    /// The parameter(x and y) represents screen coordinates and is to be considered an hint to the item where to show eventual windows (if any).
+    Secondary { address: String, x: i32, y: i32 },
 }
 
 type State = HashMap<String, (StatusNotifierItem, Option<TrayMenu>)>;
@@ -521,6 +532,32 @@ impl Client {
         Ok(())
     }
 
+    async fn get_notifier_item_proxy(
+        &self,
+        address: String,
+    ) -> crate::error::Result<StatusNotifierItemProxy<'_>> {
+        let proxy = StatusNotifierItemProxy::builder(&self.connection)
+            .destination(address)?
+            .path(ITEM_OBJECT)?
+            .build()
+            .await?;
+        Ok(proxy)
+    }
+
+    async fn get_menu_proxy(
+        &self,
+        address: String,
+        menu_path: String,
+        // ) -> Result<DBusMenuProxy<'_>, zbus::Error> {
+    ) -> crate::error::Result<DBusMenuProxy<'_>> {
+        let proxy = DBusMenuProxy::builder(&self.connection)
+            .destination(address)?
+            .path(menu_path)?
+            .build()
+            .await?;
+        Ok(proxy)
+    }
+
     /// Subscribes to the events broadcast channel,
     /// returning a new receiver.
     ///
@@ -547,25 +584,45 @@ impl Client {
     ///
     /// If the system time is somehow before the Unix epoch.
     pub async fn activate(&self, req: ActivateRequest) -> crate::error::Result<()> {
-        let dbus_menu_proxy = DBusMenuProxy::builder(&self.connection)
-            .destination(req.address)?
-            .path(req.menu_path)?
-            .build()
-            .await?;
+        macro_rules! timeout_event {
+            ($event:expr) => {
+                if timeout(Duration::from_secs(1), $event).await.is_err() {
+                    error!("Timed out sending activate event");
+                }
+            };
+        }
+        match req {
+            ActivateRequest::MenuItem {
+                address,
+                menu_path,
+                submenu_id,
+            } => {
+                let proxy = self.get_menu_proxy(address, menu_path).await?;
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("time should flow forwards");
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should flow forwards");
+                let event = proxy.event(
+                    submenu_id,
+                    "clicked",
+                    &Value::I32(0),
+                    timestamp.as_secs() as u32,
+                );
 
-        let click_event = dbus_menu_proxy.event(
-            req.submenu_id,
-            "clicked",
-            &Value::I32(0),
-            timestamp.as_secs() as u32,
-        );
+                timeout_event!(event);
+            }
+            ActivateRequest::Default { address, x, y } => {
+                let proxy = self.get_notifier_item_proxy(address).await?;
+                let event = proxy.activate(x, y);
 
-        if timeout(Duration::from_secs(1), click_event).await.is_err() {
-            error!("Timed out sending activate event");
+                timeout_event!(event);
+            }
+            ActivateRequest::Secondary { address, x, y } => {
+                let proxy = self.get_notifier_item_proxy(address).await?;
+                let event = proxy.secondary_activate(x, y);
+
+                timeout_event!(event);
+            }
         }
 
         Ok(())
