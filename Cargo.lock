@@ -1512,7 +1512,7 @@ dependencies = [
 
 [[package]]
 name = "system-tray"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "dbusmenu-gtk3-sys",
  "gtk",
