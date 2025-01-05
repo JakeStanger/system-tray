@@ -172,8 +172,17 @@ impl Client {
 
                     if let Ok(address) = address {
                         debug!("received new item: {address}");
-                        Self::handle_item(address, connection.clone(), tx.clone(), items.clone())
-                            .await?;
+                        if let Err(err) = Self::handle_item(
+                            address,
+                            connection.clone(),
+                            tx.clone(),
+                            items.clone(),
+                        )
+                        .await
+                        {
+                            error!("{err}");
+                            break;
+                        }
                     }
                 }
 
@@ -194,7 +203,12 @@ impl Client {
                 debug!("initial items: {initial_items:?}");
 
                 for item in initial_items {
-                    Self::handle_item(&item, connection.clone(), tx.clone(), items.clone()).await?;
+                    if let Err(err) =
+                        Self::handle_item(&item, connection.clone(), tx.clone(), items.clone())
+                            .await
+                    {
+                        error!("{err}");
+                    }
                 }
 
                 Ok::<(), Error>(())

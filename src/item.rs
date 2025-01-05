@@ -77,9 +77,10 @@ pub struct StatusNotifierItem {
     /// The visualization can choose between the movie or `AttentionIconPixmap` (or using neither of those) at its discretion.
     pub attention_movie_name: Option<String>,
 
-    // /// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
-    // /// (or by any other mean the visualization consider appropriate.
-    // pub tool_tip: Option<Tooltip>,
+    /// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
+    /// (or by any other mean the visualization consider appropriate.
+    pub tool_tip: Option<Tooltip>,
+
     /// The item only support the context menu, the visualization should prefer showing the menu or sending `ContextMenu()` instead of `Activate()`
     pub item_is_menu: bool,
 
@@ -253,7 +254,7 @@ impl TryFrom<DBusProps> for StatusNotifierItem {
                 attention_icon_name: props.get_string("AttentionIconName"),
                 attention_icon_pixmap: props.get_icon_pixmap("AttentionIconPixmap"),
                 attention_movie_name: props.get_string("AttentionMovieName"),
-                // tool_tip: props.get_tooltip(),
+                tool_tip: props.get_tooltip()?,
                 item_is_menu: props.get("ItemIsMenu").copied().unwrap_or_default(),
                 category: props.get_category(),
                 menu: props.get_object_path("Menu"),
@@ -280,5 +281,11 @@ impl DBusProps {
     fn get_icon_pixmap(&self, key: &str) -> Option<Vec<IconPixmap>> {
         self.get::<Array>(key)
             .and_then(|arr| IconPixmap::from_array(arr).ok())
+    }
+
+    fn get_tooltip(&self) -> Result<Option<Tooltip>> {
+        self.get::<Structure>("ToolTip")
+            .map(Tooltip::try_from)
+            .map_or(Ok(None), |v| v.map(Some))
     }
 }
