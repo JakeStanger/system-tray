@@ -286,6 +286,6 @@ impl DBusProps {
     fn get_tooltip(&self) -> Result<Option<Tooltip>> {
         self.get::<Structure>("ToolTip")
             .map(Tooltip::try_from)
-            .map_or(Ok(None), |v| v.map(Some))
+            .transpose()
     }
 }
