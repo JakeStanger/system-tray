@@ -590,10 +590,7 @@ impl Client {
     /// including the root menu(id=0).
     ///
     /// ID refers to the menuitem id.
-    ///
-    // TODO:
-    // 1. SHOULE WE PUT THIS HERE?
-    // 2. WHAT DOES THE RETURN VALUE MEAN?
+    /// Returns `needsUpdate`
     pub async fn about_to_show_menuitem(
         &self,
         address: String,
