@@ -586,8 +586,7 @@ impl Client {
         self.items.clone()
     }
 
-    /// Emitted when the submenu for a item is about to be shown,
-    /// including the root menu(id=0).
+    /// One should call this method with id=0 when opening the root menu.
     ///
     /// ID refers to the menuitem id.
     /// Returns `needsUpdate`
