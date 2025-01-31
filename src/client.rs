@@ -586,6 +586,24 @@ impl Client {
         self.items.clone()
     }
 
+    /// Emitted when the submenu for a item is about to be shown,
+    /// including the root menu(id=0).
+    ///
+    /// ID refers to the menuitem id.
+    ///
+    // TODO:
+    // 1. SHOULE WE PUT THIS HERE?
+    // 2. WHAT DOES THE RETURN VALUE MEAN?
+    pub async fn about_to_show_menuitem(
+        &self,
+        address: String,
+        menu_path: String,
+        id: i32,
+    ) -> crate::error::Result<bool> {
+        let proxy = self.get_menu_proxy(address, menu_path).await?;
+        Ok(proxy.about_to_show(id).await?)
+    }
+
     /// Sends an activate request for a menu item.
     ///
     /// # Errors
