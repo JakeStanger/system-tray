@@ -586,6 +586,20 @@ impl Client {
         self.items.clone()
     }
 
+    /// One should call this method with id=0 when opening the root menu.
+    ///
+    /// ID refers to the menuitem id.
+    /// Returns `needsUpdate`
+    pub async fn about_to_show_menuitem(
+        &self,
+        address: String,
+        menu_path: String,
+        id: i32,
+    ) -> crate::error::Result<bool> {
+        let proxy = self.get_menu_proxy(address, menu_path).await?;
+        Ok(proxy.about_to_show(id).await?)
+    }
+
     /// Sends an activate request for a menu item.
     ///
     /// # Errors
