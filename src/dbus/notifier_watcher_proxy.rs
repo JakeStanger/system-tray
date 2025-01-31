@@ -10,38 +10,38 @@
 //! section of the zbus documentation.
 //!
 
-use zbus::dbus_proxy;
+use zbus::proxy;
 
-#[dbus_proxy(
+#[proxy(
     default_service = "org.kde.StatusNotifierWatcher",
     interface = "org.kde.StatusNotifierWatcher",
     default_path = "/StatusNotifierWatcher"
 )]
-trait StatusNotifierWatcher {
+pub trait StatusNotifierWatcher {
     fn register_status_notifier_host(&self, service: &str) -> zbus::Result<()>;
 
     fn unregister_status_notifier_item(&self, service: &str) -> zbus::Result<()>;
 
     fn register_status_notifier_item(&self, service: &str) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_host_registered(&self) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_host_unregistered(&self) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_item_registered(&self, service: &str) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_item_unregistered(&self, service: &str) -> zbus::Result<()>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn is_status_notifier_host_registered(&self) -> zbus::Result<bool>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn protocol_version(&self) -> zbus::Result<i32>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn registered_status_notifier_items(&self) -> zbus::Result<Vec<String>>;
 }

@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 
-use zbus::dbus_proxy;
+use zbus::proxy;
 use zbus::zvariant::{OwnedValue, Value};
 
 use serde::{Deserialize, Serialize};
@@ -55,8 +55,8 @@ pub struct RemovedProps<'a> {
     pub(crate) fields: Vec<&'a str>,
 }
 
-#[dbus_proxy(interface = "com.canonical.dbusmenu", assume_defaults = true)]
-trait DBusMenu {
+#[proxy(interface = "com.canonical.dbusmenu", assume_defaults = true)]
+pub trait DBusMenu {
     fn about_to_show(&self, id: i32) -> zbus::Result<bool>;
 
     fn event(
@@ -82,22 +82,22 @@ trait DBusMenu {
 
     fn get_property(&self, id: i32, name: &str) -> zbus::Result<zbus::zvariant::OwnedValue>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn item_activation_requested(&self, id: i32, timestamp: u32) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn items_properties_updated(
         &self,
         updated_props: Vec<(i32, HashMap<&str, Value<'_>>)>,
         removed_props: Vec<(i32, Vec<&str>)>,
     ) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn layout_updated(&self, revision: u32, parent: i32) -> zbus::Result<()>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn status(&self) -> zbus::Result<String>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn version(&self) -> zbus::Result<u32>;
 }

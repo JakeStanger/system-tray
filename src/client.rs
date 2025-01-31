@@ -353,7 +353,7 @@ impl Client {
         let dbus_proxy = DBusProxy::new(connection).await?;
 
         let mut disconnect_stream = dbus_proxy.receive_name_owner_changed().await?;
-        let mut props_changed = notifier_item_proxy.receive_all_signals().await?;
+        let mut props_changed = notifier_item_proxy.inner().receive_all_signals().await?;
 
         loop {
             tokio::select! {
@@ -391,10 +391,11 @@ impl Client {
 
     /// Gets the update event for a `DBus` properties change message.
     async fn get_update_event(
-        change: Arc<Message>,
+        change: Message,
         properties_proxy: &PropertiesProxy<'_>,
     ) -> Option<UpdateEvent> {
-        let member = change.member()?;
+        let header = change.header();
+        let member = header.member()?;
 
         let property_name = match member.as_str() {
             "NewAttentionIcon" => "AttentionIconName",
@@ -431,17 +432,19 @@ impl Client {
             "NewOverlayIcon" => Some(OverlayIcon(property.to_string())),
             "NewStatus" => Some(Status(
                 property
-                    .downcast_ref::<str>()
+                    .downcast_ref::<&str>()
+                    .ok()
                     .map(item::Status::from)
                     .unwrap_or_default(),
             )),
             "NewTitle" => Some(Title(property.to_string())),
-            "NewToolTip" => Some(Tooltip(
+            "NewToolTip" => Some(Tooltip({
                 property
-                    .downcast_ref::<Structure>()
+                    .downcast_ref::<&Structure>()
+                    .ok()
                     .map(crate::item::Tooltip::try_from)?
-                    .ok(),
-            )),
+                    .ok()
+            })),
             _ => {
                 warn!("received unhandled update event: {member}");
                 None
@@ -530,7 +533,8 @@ impl Client {
                     ))?;
                 }
                 Some(change) = properties_updated.next() => {
-                    let update = change.body::<PropertiesUpdate>()?;
+                    let body = change.message().body();
+                    let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
 
                     tx.send(Event::Update(

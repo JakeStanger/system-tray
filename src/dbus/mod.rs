@@ -17,8 +17,9 @@ impl DBusProps {
     where
         T: ?Sized,
         &'a T: TryFrom<&'a Value<'a>>,
+        <&'a T as TryFrom<&'a Value<'a>>>::Error: Into<zbus::zvariant::Error>,
     {
-        self.0.get(key).and_then(|value| value.downcast_ref::<T>())
+        self.0.get(key)?.downcast_ref().ok()
     }
 
     /// Gets `key` from the map if present,
@@ -42,7 +43,7 @@ pub(crate) trait OwnedValueExt {
 
 impl OwnedValueExt for OwnedValue {
     fn to_string(&self) -> Option<String> {
-        self.downcast_ref::<str>().map(ToString::to_string)
+        self.downcast_ref::<&str>().ok().map(ToString::to_string)
     }
 }
 
