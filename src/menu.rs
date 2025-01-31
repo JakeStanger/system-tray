@@ -241,7 +241,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
 
         if let Some(Value::Dict(dict)) = fields.next() {
             menu.children_display = dict
-                .get::<str, str>("children_display")?
+                .get::<str, str>("children-display")?
                 .map(str::to_string);
 
             // see: https://github.com/gnustep/libs-dbuskit/blob/4dc9b56216e46e0e385b976b0605b965509ebbbd/Bundles/DBusMenu/com.canonical.dbusmenu.xml#L76
