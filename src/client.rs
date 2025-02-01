@@ -427,9 +427,9 @@ impl Client {
 
         use UpdateEvent::*;
         match member.as_str() {
-            "NewAttentionIcon" => Some(AttentionIcon(property.to_string())),
-            "NewIcon" => Some(Icon(property.to_string())),
-            "NewOverlayIcon" => Some(OverlayIcon(property.to_string())),
+            "NewAttentionIcon" => Some(AttentionIcon(property.to_string().ok())),
+            "NewIcon" => Some(Icon(property.to_string().ok())),
+            "NewOverlayIcon" => Some(OverlayIcon(property.to_string().ok())),
             "NewStatus" => Some(Status(
                 property
                     .downcast_ref::<&str>()
@@ -437,7 +437,7 @@ impl Client {
                     .map(item::Status::from)
                     .unwrap_or_default(),
             )),
-            "NewTitle" => Some(Title(property.to_string())),
+            "NewTitle" => Some(Title(property.to_string().ok())),
             "NewToolTip" => Some(Tooltip({
                 property
                     .downcast_ref::<&Structure>()
