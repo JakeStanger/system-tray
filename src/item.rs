@@ -170,11 +170,7 @@ impl IconPixmap {
 
                 let pixels = pixel_values
                     .iter()
-                    .map(|p| {
-                        p.downcast_ref::<&u8>()
-                            .map_err(|_| Error::InvalidData("invalid pixel value"))
-                            .copied()
-                    })
+                    .map(|p| p.downcast_ref::<u8>().map_err(Into::into))
                     .collect::<Result<_>>()?;
 
                 Ok(IconPixmap {
@@ -206,27 +202,28 @@ impl TryFrom<&Structure<'_>> for Tooltip {
         Ok(Self {
             icon_name: fields
                 .first()
-                .and_then(|v| Value::downcast_ref::<&str>(v).ok())
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("icon_name"))?,
+                .ok_or(Error::InvalidData("icon_name"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
 
             icon_data: fields
                 .get(1)
-                .and_then(|v| Value::downcast_ref::<&Array>(v).ok())
-                .map(IconPixmap::from_array)
-                .ok_or(Error::InvalidData("icon_data"))??,
+                .ok_or(Error::InvalidData("icon_data"))?
+                .downcast_ref::<&Array>()
+                .map_err(Into::into)
+                .and_then(IconPixmap::from_array)?,
 
             title: fields
                 .get(2)
-                .and_then(|v| Value::downcast_ref::<&str>(v).ok())
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("title"))?,
+                .ok_or(Error::InvalidData("title"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
 
             description: fields
                 .get(3)
-                .and_then(|v| Value::downcast_ref::<&str>(v).ok())
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("description"))?,
+                .ok_or(Error::InvalidData("description"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
         })
     }
 }
