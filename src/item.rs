@@ -2,7 +2,7 @@ use crate::dbus::DBusProps;
 use crate::error::{Error, Result};
 use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
-use zbus::zvariant::{Array, Structure, Value};
+use zbus::zvariant::{Array, Structure};
 
 /// Represents an item to display inside the tray.
 /// <https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/>
