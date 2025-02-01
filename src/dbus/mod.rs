@@ -42,12 +42,14 @@ impl DBusProps {
 }
 
 pub(crate) trait OwnedValueExt {
-    fn to_string(&self) -> Option<String>;
+    fn to_string(&self) -> Result<String>;
 }
 
 impl OwnedValueExt for OwnedValue {
-    fn to_string(&self) -> Option<String> {
-        self.downcast_ref::<&str>().ok().map(ToString::to_string)
+    fn to_string(&self) -> Result<String> {
+        self.downcast_ref::<&str>()
+            .map(ToString::to_string)
+            .map_err(Into::into)
     }
 }
 
