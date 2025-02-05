@@ -283,11 +283,19 @@ impl Client {
         {
             let connection = connection.clone();
             let destination = destination.to_string();
+            let items = items.clone();
             let tx = tx.clone();
 
             spawn(async move {
-                Self::watch_item_properties(&destination, &path, &connection, properties_proxy, tx)
-                    .await?;
+                Self::watch_item_properties(
+                    &destination,
+                    &path,
+                    &connection,
+                    properties_proxy,
+                    items,
+                    tx,
+                )
+                .await?;
 
                 debug!("Stopped watching {destination}{path}");
                 Ok::<(), Error>(())
@@ -342,6 +350,7 @@ impl Client {
         path: &str,
         connection: &Connection,
         properties_proxy: PropertiesProxy<'_>,
+        items: Arc<Mutex<State>>,
         tx: broadcast::Sender<Event>,
     ) -> crate::error::Result<()> {
         let notifier_item_proxy = StatusNotifierItemProxy::builder(connection)
@@ -379,6 +388,8 @@ impl Client {
                             if let Err(error) = watcher_proxy.unregister_status_notifier_item(old).await {
                                 error!("{error:?}");
                             }
+
+                            items.lock().expect("mutex lock should succeed").remove(&destination.to_string());
 
                             tx.send(Event::Remove(destination.to_string()))?;
                             break Ok(());
