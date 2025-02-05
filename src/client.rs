@@ -3,7 +3,7 @@ use crate::dbus::notifier_item_proxy::StatusNotifierItemProxy;
 use crate::dbus::notifier_watcher_proxy::StatusNotifierWatcherProxy;
 use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
-use crate::error::Error;
+use crate::error::{Error, Result};
 use crate::item::{self, Status, StatusNotifierItem, Tooltip};
 use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
@@ -358,9 +358,15 @@ impl Client {
         loop {
             tokio::select! {
                 Some(change) = props_changed.next() => {
-                    if let Some(event) = Self::get_update_event(change, &properties_proxy).await {
-                        debug!("[{destination}{path}] received property change: {event:?}");
-                        tx.send(Event::Update(destination.to_string(), event))?;
+                    match Self::get_update_event(change, &properties_proxy).await {
+                        Ok(Some(event)) => {
+                                debug!("[{destination}{path}] received property change: {event:?}");
+                                tx.send(Event::Update(destination.to_string(), event))?;
+                            }
+                        Err(e) => {
+                            error!("Error parsing update properties from {destination}{path}: {e:?}");
+                        }
+                        _ => {}
                     }
                 }
                 Some(signal) = disconnect_stream.next() => {
@@ -393,9 +399,11 @@ impl Client {
     async fn get_update_event(
         change: Message,
         properties_proxy: &PropertiesProxy<'_>,
-    ) -> Option<UpdateEvent> {
+    ) -> Result<Option<UpdateEvent>> {
         let header = change.header();
-        let member = header.member()?;
+        let member = header
+            .member()
+            .ok_or(Error::InvalidData("Update message header missing `member`"))?;
 
         let property_name = match member.as_str() {
             "NewAttentionIcon" => "AttentionIconName",
@@ -407,49 +415,37 @@ impl Client {
             _ => &member.as_str()["New".len()..],
         };
 
-        let res = properties_proxy
+        let property = properties_proxy
             .get(
                 InterfaceName::from_static_str(PROPERTIES_INTERFACE)
                     .expect("to be valid interface name"),
                 property_name,
             )
-            .await;
-
-        let property = match res {
-            Ok(property) => property,
-            Err(err) => {
-                error!("error fetching property '{property_name}': {err:?}");
-                return None;
-            }
-        };
+            .await?;
 
         debug!("received tray item update: {member} -> {property:?}");
 
         use UpdateEvent::*;
-        match member.as_str() {
+        Ok(match member.as_str() {
             "NewAttentionIcon" => Some(AttentionIcon(property.to_string().ok())),
             "NewIcon" => Some(Icon(property.to_string().ok())),
             "NewOverlayIcon" => Some(OverlayIcon(property.to_string().ok())),
             "NewStatus" => Some(Status(
-                property
-                    .downcast_ref::<&str>()
-                    .ok()
-                    .map(item::Status::from)
-                    .unwrap_or_default(),
+                property.downcast_ref::<&str>().map(item::Status::from)?,
             )),
             "NewTitle" => Some(Title(property.to_string().ok())),
             "NewToolTip" => Some(Tooltip({
                 property
                     .downcast_ref::<&Structure>()
                     .ok()
-                    .map(crate::item::Tooltip::try_from)?
-                    .ok()
+                    .map(crate::item::Tooltip::try_from)
+                    .transpose()?
             })),
             _ => {
                 warn!("received unhandled update event: {member}");
                 None
             }
-        }
+        })
     }
 
     /// Watches the `DBusMenu` associated with an SNI item.
