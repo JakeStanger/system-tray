@@ -1,5 +1,5 @@
 #[cfg(feature = "data")]
-pub use data_all::TrayItemMap;
+pub use data_all::*;
 
 #[cfg(not(feature = "data"))]
 pub use data_destination_only::TrayItemMap;
@@ -13,14 +13,14 @@ mod data_all {
     };
     use tracing::error;
 
-    type BaseMap = HashMap<String, (StatusNotifierItem, Option<TrayMenu>)>;
+    pub type BaseMap = HashMap<String, (StatusNotifierItem, Option<TrayMenu>)>;
 
     #[derive(Debug, Clone)]
     pub struct TrayItemMap {
         inner: Arc<Mutex<BaseMap>>,
     }
     impl TrayItemMap {
-        pub fn get_map(&self) -> Arc<Mutex<BaseMap>> {
+        pub(crate) fn get_map(&self) -> Arc<Mutex<BaseMap>> {
             self.inner.clone()
         }
 
