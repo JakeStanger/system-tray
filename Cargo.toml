@@ -17,7 +17,8 @@ zbus = { version = "5.3", default-features = false, features = ["tokio"] }
 tracing = "0.1.41"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
-thiserror = "2.0.11"
+thiserror = "2.0"
+futures-lite = "2.6"
 
 gtk = { version = "0.18.1", optional = true }
 dbusmenu-gtk3-sys = { version = "0.1.0", optional = true }
