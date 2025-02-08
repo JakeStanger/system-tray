@@ -1,3 +1,4 @@
+use crate::data::TrayItemMap;
 use crate::dbus::dbus_menu_proxy::{DBusMenuProxy, PropertiesUpdate};
 use crate::dbus::notifier_item_proxy::StatusNotifierItemProxy;
 use crate::dbus::notifier_watcher_proxy::StatusNotifierWatcherProxy;
@@ -10,7 +11,6 @@ use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
@@ -76,8 +76,6 @@ pub enum ActivateRequest {
     Secondary { address: String, x: i32, y: i32 },
 }
 
-type State = HashMap<String, (StatusNotifierItem, Option<TrayMenu>)>;
-
 const PROPERTIES_INTERFACE: &str = "org.kde.StatusNotifierItem";
 
 /// Client for watching the tray.
@@ -87,7 +85,7 @@ pub struct Client {
     _rx: broadcast::Receiver<Event>,
     connection: Connection,
 
-    items: Arc<Mutex<State>>,
+    items: TrayItemMap,
 }
 
 impl Client {
@@ -154,7 +152,7 @@ impl Client {
             .register_status_notifier_host(&wellknown)
             .await?;
 
-        let items = Arc::new(Mutex::new(HashMap::new()));
+        let items = TrayItemMap::new();
 
         // handle new items
         {
@@ -229,11 +227,8 @@ impl Client {
                 while let Some(thing) = stream.next().await {
                     let body = thing.args()?;
                     if body.name == names::WATCHER_BUS {
-                        let mut items = items.lock().expect("mutex lock should succeed");
-                        let keys = items.keys().cloned().collect::<Vec<_>>();
-                        for address in keys {
-                            items.remove(&address);
-                            tx.send(Event::Remove(address))?;
+                        for dest in items.clear_items() {
+                            tx.send(Event::Remove(dest))?;
                         }
                     }
                 }
@@ -258,7 +253,7 @@ impl Client {
         address: &str,
         connection: Connection,
         tx: broadcast::Sender<Event>,
-        items: Arc<Mutex<State>>,
+        items: TrayItemMap,
     ) -> crate::error::Result<()> {
         let (destination, path) = parse_address(address);
 
@@ -270,10 +265,7 @@ impl Client {
 
         let properties = Self::get_item_properties(destination, &path, &properties_proxy).await?;
 
-        items
-            .lock()
-            .expect("mutex lock should succeed")
-            .insert(destination.into(), (properties.clone(), None));
+        items.new_item(destination.into(), properties.clone());
 
         tx.send(Event::Add(
             destination.to_string(),
@@ -292,8 +284,8 @@ impl Client {
                     &path,
                     &connection,
                     properties_proxy,
-                    items,
                     tx,
+                    items,
                 )
                 .await?;
 
@@ -350,8 +342,8 @@ impl Client {
         path: &str,
         connection: &Connection,
         properties_proxy: PropertiesProxy<'_>,
-        items: Arc<Mutex<State>>,
         tx: broadcast::Sender<Event>,
+        items: TrayItemMap,
     ) -> crate::error::Result<()> {
         let notifier_item_proxy = StatusNotifierItemProxy::builder(connection)
             .destination(destination)?
@@ -395,7 +387,8 @@ impl Client {
                                 error!("{error:?}");
                             }
 
-                            items.lock().expect("mutex lock should succeed").remove(&destination.to_string());
+
+                            items.remove_item(destination);
 
                             tx.send(Event::Remove(destination.to_string()))?;
                             break Ok(());
@@ -469,7 +462,7 @@ impl Client {
         menu_path: &str,
         connection: &Connection,
         tx: broadcast::Sender<Event>,
-        items: Arc<Mutex<State>>,
+        items: TrayItemMap,
     ) -> crate::error::Result<()> {
         let dbus_menu_proxy = DBusMenuProxy::builder(connection)
             .destination(destination.as_str())?
@@ -480,15 +473,7 @@ impl Client {
         let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
         let menu = TrayMenu::try_from(menu)?;
 
-        if let Some((_, menu_cache)) = items
-            .lock()
-            .expect("mutex lock should succeed")
-            .get_mut(&destination)
-        {
-            menu_cache.replace(menu.clone());
-        } else {
-            error!("could not find item in state");
-        }
+        items.update_menu(&destination, &menu);
 
         tx.send(Event::Update(
             destination.to_string(),
@@ -522,15 +507,7 @@ impl Client {
 
                     let menu = TrayMenu::try_from(menu)?;
 
-                    if let Some((_, menu_cache)) = items
-                        .lock()
-                        .expect("mutex lock should succeed")
-                        .get_mut(&destination)
-                    {
-                        menu_cache.replace(menu.clone());
-                    } else {
-                        error!("could not find item in state");
-                    }
+                    items.update_menu(&destination, &menu);
 
                     debug!("sending new menu for '{destination}'");
                     trace!("new menu for '{destination}': {menu:?}");
@@ -593,7 +570,7 @@ impl Client {
 
     /// Gets all current items, including their menus if present.
     #[must_use]
-    pub fn items(&self) -> Arc<Mutex<State>> {
+    pub fn items(&self) -> TrayItemMap {
         self.items.clone()
     }
 
