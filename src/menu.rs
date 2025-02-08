@@ -2,7 +2,6 @@ use crate::dbus::dbus_menu_proxy::{MenuLayout, PropertiesUpdate, UpdatedProps};
 use crate::error::{Error, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
-use zbus::zvariant;
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
@@ -221,9 +220,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
     type Error = Error;
 
     fn try_from(value: &OwnedValue) -> Result<Self> {
-        let structure = value
-            .downcast_ref::<Structure>()
-            .ok_or(Error::ZBusVariant(zvariant::Error::IncorrectType))?;
+        let structure = value.downcast_ref::<&Structure>()?;
 
         let mut fields = structure.fields().iter();
 
@@ -241,30 +238,30 @@ impl TryFrom<&OwnedValue> for MenuItem {
 
         if let Some(Value::Dict(dict)) = fields.next() {
             menu.children_display = dict
-                .get::<str, str>("children-display")?
+                .get::<&str, &str>(&"children-display")?
                 .map(str::to_string);
 
             // see: https://github.com/gnustep/libs-dbuskit/blob/4dc9b56216e46e0e385b976b0605b965509ebbbd/Bundles/DBusMenu/com.canonical.dbusmenu.xml#L76
             menu.label = dict
-                .get::<str, str>("label")?
+                .get::<&str, &str>(&"label")?
                 .map(|label| label.replace('_', ""));
 
-            if let Some(enabled) = dict.get::<str, bool>("enabled")? {
-                menu.enabled = *enabled;
+            if let Some(enabled) = dict.get::<&str, bool>(&"enabled")? {
+                menu.enabled = enabled;
             }
 
-            if let Some(visible) = dict.get::<str, bool>("visible")? {
-                menu.visible = *visible;
+            if let Some(visible) = dict.get::<&str, bool>(&"visible")? {
+                menu.visible = visible;
             }
 
-            menu.icon_name = dict.get::<str, str>("icon-name")?.map(str::to_string);
+            menu.icon_name = dict.get::<&str, &str>(&"icon-name")?.map(str::to_string);
 
-            if let Some(array) = dict.get::<str, Array>("icon-data")? {
+            if let Some(array) = dict.get::<&str, &Array>(&"icon-data")? {
                 menu.icon_data = Some(get_icon_data(array)?);
             }
 
             if let Some(disposition) = dict
-                .get::<str, str>("disposition")
+                .get::<&str, &str>(&"disposition")
                 .ok()
                 .flatten()
                 .map(Disposition::from)
@@ -273,21 +270,21 @@ impl TryFrom<&OwnedValue> for MenuItem {
             }
 
             menu.toggle_state = dict
-                .get::<str, i32>("toggle-state")
+                .get::<&str, i32>(&"toggle-state")
                 .ok()
                 .flatten()
-                .map(|value| ToggleState::from(*value))
+                .map(ToggleState::from)
                 .unwrap_or_default();
 
             menu.toggle_type = dict
-                .get::<str, str>("toggle-type")
+                .get::<&str, &str>(&"toggle-type")
                 .ok()
                 .flatten()
                 .map(ToggleType::from)
                 .unwrap_or_default();
 
             menu.menu_type = dict
-                .get::<str, str>("type")
+                .get::<&str, &str>(&"type")
                 .ok()
                 .flatten()
                 .map(MenuType::from)
@@ -297,7 +294,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
         if let Some(Value::Array(array)) = fields.next() {
             let mut submenu = vec![];
             for value in array.iter() {
-                let value = OwnedValue::from(value);
+                let value = OwnedValue::try_from(value)?;
                 let menu = MenuItem::try_from(&value)?;
                 submenu.push(menu);
             }
@@ -345,42 +342,43 @@ impl TryFrom<UpdatedProps<'_>> for MenuItemUpdate {
     fn try_from(value: UpdatedProps) -> Result<Self> {
         let dict = value.fields;
 
-        let icon_data =
-            if let Some(arr) = dict.get("icon-data").and_then(Value::downcast_ref::<Array>) {
-                Some(Some(get_icon_data(arr)?))
-            } else {
-                None
-            };
+        let icon_data = if let Some(arr) = dict
+            .get("icon-data")
+            .map(Value::downcast_ref::<&Array>)
+            .transpose()?
+        {
+            Some(Some(get_icon_data(arr)?))
+        } else {
+            None
+        };
 
         Ok(Self {
             label: dict
                 .get("label")
-                .map(|v| v.downcast_ref::<str>().map(ToString::to_string)),
+                .map(|v| v.downcast_ref::<&str>().map(ToString::to_string).ok()),
 
             enabled: dict
                 .get("enabled")
-                .and_then(Value::downcast_ref::<bool>)
-                .copied(),
+                .and_then(|v| Value::downcast_ref::<bool>(v).ok()),
 
             visible: dict
                 .get("visible")
-                .and_then(Value::downcast_ref::<bool>)
-                .copied(),
+                .and_then(|v| Value::downcast_ref::<bool>(v).ok()),
 
             icon_name: dict
                 .get("icon-name")
-                .map(|v| v.downcast_ref::<str>().map(ToString::to_string)),
+                .map(|v| v.downcast_ref::<&str>().map(ToString::to_string).ok()),
 
             icon_data,
 
             toggle_state: dict
                 .get("toggle-state")
-                .and_then(Value::downcast_ref::<i32>)
-                .map(|value| ToggleState::from(*value)),
+                .and_then(|v| Value::downcast_ref::<i32>(v).ok())
+                .map(ToggleState::from),
 
             disposition: dict
                 .get("disposition")
-                .and_then(Value::downcast_ref::<str>)
+                .and_then(|v| Value::downcast_ref::<&str>(v).ok())
                 .map(Disposition::from),
         })
     }
@@ -389,10 +387,6 @@ impl TryFrom<UpdatedProps<'_>> for MenuItemUpdate {
 fn get_icon_data(array: &Array) -> Result<Vec<u8>> {
     array
         .iter()
-        .map(|v| {
-            v.downcast_ref::<u8>()
-                .ok_or(Error::InvalidData("invalid u8"))
-                .copied()
-        })
+        .map(|v| v.downcast_ref::<u8>().map_err(Into::into))
         .collect::<Result<Vec<_>>>()
 }

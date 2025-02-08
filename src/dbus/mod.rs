@@ -1,3 +1,4 @@
+use crate::error::Result;
 use std::collections::HashMap;
 use std::ops::Deref;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
@@ -13,36 +14,42 @@ pub(crate) struct DBusProps(pub HashMap<String, OwnedValue>);
 impl DBusProps {
     /// Gets `key` from the map if present,
     /// downcasting it to type `T`.
-    pub fn get<'a, T>(&'a self, key: &str) -> Option<&'a T>
+    pub fn get<'a, T>(&'a self, key: &str) -> Option<Result<&'a T>>
     where
         T: ?Sized,
         &'a T: TryFrom<&'a Value<'a>>,
+        <&'a T as TryFrom<&'a Value<'a>>>::Error: Into<zbus::zvariant::Error>,
     {
-        self.0.get(key).and_then(|value| value.downcast_ref::<T>())
+        self.0
+            .get(key)
+            .map(|v| v.downcast_ref().map_err(Into::into))
     }
 
     /// Gets `key` from the map if present,
     /// interpreting it as a `str`
     /// and converting it to a string.
-    pub fn get_string(&self, key: &str) -> Option<String> {
-        self.get::<str>(key).map(ToString::to_string)
+    pub fn get_string(&self, key: &str) -> Option<Result<String>> {
+        self.get::<str>(key).map(|res| res.map(ToString::to_string))
     }
 
     /// Gets `key` from the map if present,
     /// interpreting it as an `ObjectPath`,
     /// and converting it to a string.
-    pub fn get_object_path(&self, key: &str) -> Option<String> {
-        self.get::<ObjectPath>(key).map(ToString::to_string)
+    pub fn get_object_path(&self, key: &str) -> Option<Result<String>> {
+        self.get::<ObjectPath>(key)
+            .map(|res| res.map(ToString::to_string))
     }
 }
 
 pub(crate) trait OwnedValueExt {
-    fn to_string(&self) -> Option<String>;
+    fn to_string(&self) -> Result<String>;
 }
 
 impl OwnedValueExt for OwnedValue {
-    fn to_string(&self) -> Option<String> {
-        self.downcast_ref::<str>().map(ToString::to_string)
+    fn to_string(&self) -> Result<String> {
+        self.downcast_ref::<&str>()
+            .map(ToString::to_string)
+            .map_err(Into::into)
     }
 }
 

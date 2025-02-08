@@ -2,7 +2,7 @@ use crate::dbus::DBusProps;
 use crate::error::{Error, Result};
 use serde::Deserialize;
 use std::fmt::{Debug, Formatter};
-use zbus::zvariant::{Array, Structure, Value};
+use zbus::zvariant::{Array, Structure};
 
 /// Represents an item to display inside the tray.
 /// <https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/>
@@ -150,36 +150,27 @@ impl IconPixmap {
         array
             .iter()
             .map(|pixmap| {
-                let structure = pixmap.downcast_ref::<Structure>();
-                let fields = structure
-                    .ok_or(Error::InvalidData("invalid or missing structure data"))?
-                    .fields();
+                let structure = pixmap.downcast_ref::<&Structure>()?;
+                let fields = structure.fields();
 
                 let width = fields
                     .first()
-                    .and_then(Value::downcast_ref::<i32>)
-                    .copied()
-                    .ok_or(Error::InvalidData("invalid or missing width"))?;
+                    .ok_or(Error::InvalidData("invalid or missing width"))?
+                    .downcast_ref::<i32>()?;
 
                 let height = fields
-                    .get(1)
-                    .and_then(Value::downcast_ref::<i32>)
-                    .copied()
-                    .ok_or(Error::InvalidData("invalid or missing height"))?;
+                    .first()
+                    .ok_or(Error::InvalidData("invalid or missing width"))?
+                    .downcast_ref::<i32>()?;
 
                 let pixel_values = fields
                     .get(2)
-                    .and_then(Value::downcast_ref::<Array>)
                     .ok_or(Error::InvalidData("invalid or missing pixel values"))?
-                    .get();
+                    .downcast_ref::<&Array>()?;
 
                 let pixels = pixel_values
                     .iter()
-                    .map(|p| {
-                        p.downcast_ref::<u8>()
-                            .ok_or(Error::InvalidData("invalid pixel value"))
-                            .copied()
-                    })
+                    .map(|p| p.downcast_ref::<u8>().map_err(Into::into))
                     .collect::<Result<_>>()?;
 
                 Ok(IconPixmap {
@@ -211,27 +202,28 @@ impl TryFrom<&Structure<'_>> for Tooltip {
         Ok(Self {
             icon_name: fields
                 .first()
-                .and_then(Value::downcast_ref::<str>)
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("icon_name"))?,
+                .ok_or(Error::InvalidData("icon_name"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
 
             icon_data: fields
                 .get(1)
-                .and_then(Value::downcast_ref::<Array>)
-                .map(IconPixmap::from_array)
-                .ok_or(Error::InvalidData("icon_data"))??,
+                .ok_or(Error::InvalidData("icon_data"))?
+                .downcast_ref::<&Array>()
+                .map_err(Into::into)
+                .and_then(IconPixmap::from_array)?,
 
             title: fields
                 .get(2)
-                .and_then(Value::downcast_ref::<str>)
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("title"))?,
+                .ok_or(Error::InvalidData("title"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
 
             description: fields
                 .get(3)
-                .and_then(Value::downcast_ref::<str>)
-                .map(ToString::to_string)
-                .ok_or(Error::InvalidData("description"))?,
+                .ok_or(Error::InvalidData("description"))?
+                .downcast_ref::<&str>()
+                .map(ToString::to_string)?,
         })
     }
 }
@@ -241,23 +233,32 @@ impl TryFrom<DBusProps> for StatusNotifierItem {
 
     fn try_from(props: DBusProps) -> Result<Self> {
         if let Some(id) = props.get_string("Id") {
+            let id = id?;
             Ok(Self {
                 id,
-                title: props.get_string("Title"),
-                status: props.get_status(),
-                window_id: props.get::<u32>("WindowId").copied().unwrap_or_default(),
-                icon_theme_path: props.get_string("IconThemePath"),
-                icon_name: props.get_string("IconName"),
-                icon_pixmap: props.get_icon_pixmap("IconPixmap"),
-                overlay_icon_name: props.get_string("OverlayIconName"),
-                overlay_icon_pixmap: props.get_icon_pixmap("OverlayIconPixmap"),
-                attention_icon_name: props.get_string("AttentionIconName"),
-                attention_icon_pixmap: props.get_icon_pixmap("AttentionIconPixmap"),
-                attention_movie_name: props.get_string("AttentionMovieName"),
-                tool_tip: props.get_tooltip()?,
-                item_is_menu: props.get("ItemIsMenu").copied().unwrap_or_default(),
-                category: props.get_category(),
-                menu: props.get_object_path("Menu"),
+                title: props.get_string("Title").transpose()?,
+                status: props.get_status()?,
+                window_id: props
+                    .get::<i32>("WindowId")
+                    .transpose()?
+                    .copied()
+                    .unwrap_or_default() as u32,
+                icon_theme_path: props.get_string("IconThemePath").transpose()?,
+                icon_name: props.get_string("IconName").transpose()?,
+                icon_pixmap: props.get_icon_pixmap("IconPixmap").transpose()?,
+                overlay_icon_name: props.get_string("OverlayIconName").transpose()?,
+                overlay_icon_pixmap: props.get_icon_pixmap("OverlayIconPixmap").transpose()?,
+                attention_icon_name: props.get_string("AttentionIconName").transpose()?,
+                attention_icon_pixmap: props.get_icon_pixmap("AttentionIconPixmap").transpose()?,
+                attention_movie_name: props.get_string("AttentionMovieName").transpose()?,
+                tool_tip: props.get_tooltip().transpose()?,
+                item_is_menu: props
+                    .get("ItemIsMenu")
+                    .transpose()?
+                    .copied()
+                    .unwrap_or_default(),
+                category: props.get_category()?,
+                menu: props.get_object_path("Menu").transpose()?,
             })
         } else {
             Err(Error::MissingProperty("Id"))
@@ -266,26 +267,29 @@ impl TryFrom<DBusProps> for StatusNotifierItem {
 }
 
 impl DBusProps {
-    fn get_category(&self) -> Category {
-        self.get::<str>("Category")
+    fn get_category(&self) -> Result<Category> {
+        Ok(self
+            .get::<str>("Category")
+            .transpose()?
             .map(Category::from)
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 
-    fn get_status(&self) -> Status {
-        self.get::<str>("Status")
+    fn get_status(&self) -> Result<Status> {
+        Ok(self
+            .get::<str>("Status")
+            .transpose()?
             .map(Status::from)
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 
-    fn get_icon_pixmap(&self, key: &str) -> Option<Vec<IconPixmap>> {
+    fn get_icon_pixmap(&self, key: &str) -> Option<Result<Vec<IconPixmap>>> {
         self.get::<Array>(key)
-            .and_then(|arr| IconPixmap::from_array(arr).ok())
+            .map(|arr| arr.and_then(IconPixmap::from_array))
     }
 
-    fn get_tooltip(&self) -> Result<Option<Tooltip>> {
+    fn get_tooltip(&self) -> Option<Result<Tooltip>> {
         self.get::<Structure>("ToolTip")
-            .map(Tooltip::try_from)
-            .transpose()
+            .map(|t| t.and_then(Tooltip::try_from))
     }
 }
