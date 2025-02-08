@@ -60,7 +60,7 @@ mod data_all {
     }
 }
 
-// #[cfg(not(feature = "data"))]
+#[cfg(not(feature = "data"))]
 mod data_destination_only {
     use crate::{item::StatusNotifierItem, menu::TrayMenu};
     use std::{
