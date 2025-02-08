@@ -113,7 +113,7 @@ impl Client {
     /// as this indicates a major bug.
     ///
     /// Likewise, the spawned tasks may panic if they cannot get a `Mutex` lock.
-    pub async fn new() -> crate::error::Result<Self> {
+    pub async fn new() -> Result<Self> {
         let connection = Connection::session().await?;
         let (tx, rx) = broadcast::channel(32);
 
