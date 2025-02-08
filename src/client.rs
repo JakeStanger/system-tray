@@ -10,7 +10,6 @@ use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
-use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
@@ -85,6 +84,7 @@ pub struct Client {
     _rx: broadcast::Receiver<Event>,
     connection: Connection,
 
+    #[cfg(feature = "data")]
     items: TrayItemMap,
 }
 
@@ -151,7 +151,6 @@ impl Client {
         watcher_proxy
             .register_status_notifier_host(&wellknown)
             .await?;
-
         let items = TrayItemMap::new();
 
         // handle new items
@@ -243,6 +242,7 @@ impl Client {
             connection,
             tx,
             _rx: rx,
+            #[cfg(feature = "data")]
             items,
         })
     }
@@ -265,7 +265,7 @@ impl Client {
 
         let properties = Self::get_item_properties(destination, &path, &properties_proxy).await?;
 
-        items.new_item(destination.into(), properties.clone());
+        items.new_item(destination.into(), &properties);
 
         tx.send(Event::Add(
             destination.to_string(),
@@ -569,6 +569,7 @@ impl Client {
     }
 
     /// Gets all current items, including their menus if present.
+    #[cfg(feature = "data")]
     #[must_use]
     pub fn items(&self) -> TrayItemMap {
         self.items.clone()
