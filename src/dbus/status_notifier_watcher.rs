@@ -229,6 +229,7 @@ impl StatusNotifierWatcher {
 
     /// ProtocolVersion property
     #[zbus(property)]
+    #[allow(clippy::unused_self)]
     fn protocol_version(&self) -> i32 {
         0
     }
