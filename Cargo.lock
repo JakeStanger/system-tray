@@ -1031,6 +1031,7 @@ dependencies = [
 name = "system-tray"
 version = "0.7.0"
 dependencies = [
+ "cfg-if",
  "dbusmenu-gtk3-sys",
  "futures-lite",
  "gtk",
