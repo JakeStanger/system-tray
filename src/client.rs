@@ -10,7 +10,6 @@ use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
 use tokio::sync::broadcast;
@@ -572,8 +571,8 @@ impl Client {
     /// Gets all current items, including their menus if present.
     #[cfg(feature = "data")]
     #[must_use]
-    pub fn items(&self) -> Arc<Mutex<crate::data::BaseMap>> {
-        self.items.clone().get_map()
+    pub fn items(&self) -> std::sync::Arc<std::sync::Mutex<crate::data::BaseMap>> {
+        self.items.get_map()
     }
 
     /// One should call this method with id=0 when opening the root menu.
