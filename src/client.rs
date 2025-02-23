@@ -521,6 +521,20 @@ impl Client {
                     let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
 
+                    // update item properties in the items map
+                    let layout = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
+                    let menu = TrayMenu::try_from(layout)?;
+
+                    if let Some((_, menu_cache)) = items
+                        .lock()
+                        .expect("mutex lock should succeed")
+                        .get_mut(&destination)
+                    {
+                        menu_cache.replace(menu);
+                    } else {
+                        error!("could not find item in state");
+                    }
+
                     tx.send(Event::Update(
                         destination.to_string(),
                         UpdateEvent::MenuDiff(diffs),
