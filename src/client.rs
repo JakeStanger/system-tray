@@ -361,6 +361,15 @@ impl Client {
                 Some(change) = props_changed.next() => {
                     match Self::get_update_event(change, &properties_proxy).await {
                         Ok(Some(event)) => {
+                                let properties = Self::get_item_properties(destination, &path, &properties_proxy).await;
+                                if let Ok(item) = properties {
+                                    items
+                                    .lock()
+                                    .expect("mutex lock should succeed")
+                                        .entry(destination.to_string()).and_modify(|(item_cache, _)| {
+                                    *item_cache = item;
+                                });
+                                }
                                 debug!("[{destination}{path}] received property change: {event:?}");
                                 tx.send(Event::Update(destination.to_string(), event))?;
                             }
