@@ -6,7 +6,7 @@ use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
 use crate::error::{Error, Result};
 use crate::item::{self, Status, StatusNotifierItem, Tooltip};
-use crate::menu::{MenuDiff, TrayMenu};
+use crate::menu::{MenuDiff, MenuItem, MenuItemUpdate, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
@@ -361,14 +361,13 @@ impl Client {
                 Some(change) = props_changed.next() => {
                     match Self::get_update_event(change, &properties_proxy).await {
                         Ok(Some(event)) => {
-                                let properties = Self::get_item_properties(destination, &path, &properties_proxy).await;
-                                if let Ok(item) = properties {
-                                    items
+                                if let Some((item, menu)) = items
+                                    .get_map()
                                     .lock()
                                     .expect("mutex lock should succeed")
-                                        .entry(destination.to_string()).and_modify(|(item_cache, _)| {
-                                    *item_cache = item;
-                                });
+                                    .get_mut(destination)
+                                {
+                                    apply_update_event(item, menu, event.clone());
                                 }
                                 debug!("[{destination}{path}] received property change: {event:?}");
                                 tx.send(Event::Update(destination.to_string(), event))?;
@@ -530,16 +529,13 @@ impl Client {
                     let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
 
-                    // update item properties in the items map
-                    let layout = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
-                    let menu = TrayMenu::try_from(layout)?;
-
-                    if let Some((_, menu_cache)) = items
+                    if let Some((_, Some(menu))) = items
+                        .get_map()
                         .lock()
                         .expect("mutex lock should succeed")
                         .get_mut(&destination)
                     {
-                        menu_cache.replace(menu);
+                        apply_menu_diffs(menu, diffs.clone());
                     } else {
                         error!("could not find item in state");
                     }
@@ -674,6 +670,61 @@ fn parse_address(address: &str) -> (&str, String) {
         .map_or((address, String::from("/StatusNotifierItem")), |(d, p)| {
             (d, format!("/{p}"))
         })
+}
+
+fn apply_update_event(
+    item: &mut StatusNotifierItem,
+    menu: &mut Option<TrayMenu>,
+    event: UpdateEvent,
+) {
+    match event {
+        UpdateEvent::AttentionIcon(icon_name) => item.attention_icon_name = icon_name,
+        UpdateEvent::Icon(icon_name) => item.icon_name = icon_name,
+        UpdateEvent::OverlayIcon(icon_name) => item.overlay_icon_name = icon_name,
+        UpdateEvent::Status(status) => item.status = status,
+        UpdateEvent::Title(title) => item.title = title,
+        UpdateEvent::Tooltip(tooltip) => item.tool_tip = tooltip,
+        UpdateEvent::Menu(tray_menu) => *menu = Some(tray_menu),
+        UpdateEvent::MenuConnect(menu) => item.menu = Some(menu),
+        UpdateEvent::MenuDiff(menu_diffs) => {
+            if let Some(menu) = menu {
+                apply_menu_diffs(menu, menu_diffs);
+            }
+        }
+    }
+}
+
+fn apply_menu_diffs(menu: &mut TrayMenu, diffs: Vec<MenuDiff>) {
+    let mut diff_iter = diffs.into_iter().peekable();
+    menu.submenus.iter_mut().for_each(|item| {
+        if let Some(diff) = diff_iter.next_if(|d| d.id == item.id) {
+            apply_menu_item_diff(item, diff.update);
+        }
+    });
+}
+
+fn apply_menu_item_diff(item: &mut MenuItem, update: MenuItemUpdate) {
+    if let Some(label) = update.label {
+        item.label = label;
+    }
+    if let Some(enabled) = update.enabled {
+        item.enabled = enabled;
+    }
+    if let Some(visible) = update.visible {
+        item.visible = visible;
+    }
+    if let Some(icon_name) = update.icon_name {
+        item.icon_name = icon_name;
+    }
+    if let Some(icon_data) = update.icon_data {
+        item.icon_data = icon_data;
+    }
+    if let Some(toggle_state) = update.toggle_state {
+        item.toggle_state = toggle_state;
+    }
+    if let Some(disposition) = update.disposition {
+        item.disposition = disposition;
+    }
 }
 
 #[cfg(test)]
