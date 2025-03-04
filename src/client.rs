@@ -6,7 +6,7 @@ use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
 use crate::error::{Error, Result};
 use crate::item::{self, Status, StatusNotifierItem, Tooltip};
-use crate::menu::{MenuDiff, MenuItem, MenuItemUpdate, TrayMenu};
+use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
@@ -21,6 +21,9 @@ use zbus::zvariant::{Structure, Value};
 use zbus::{Connection, Message};
 
 use self::names::ITEM_OBJECT;
+
+#[cfg(feature = "data")]
+use crate::menu::{MenuItem, MenuItemUpdate};
 
 /// An event emitted by the client
 /// representing a change from either the `StatusNotifierItem`
@@ -361,13 +364,17 @@ impl Client {
                 Some(change) = props_changed.next() => {
                     match Self::get_update_event(change, &properties_proxy).await {
                         Ok(Some(event)) => {
-                                if let Some((item, menu)) = items
-                                    .get_map()
-                                    .lock()
-                                    .expect("mutex lock should succeed")
-                                    .get_mut(destination)
-                                {
-                                    apply_update_event(item, menu, event.clone());
+                                cfg_if::cfg_if! {
+                                    if #[cfg(feature = "data")] {
+                                        if let Some((item, menu)) = items
+                                            .get_map()
+                                            .lock()
+                                            .expect("mutex lock should succeed")
+                                            .get_mut(destination)
+                                        {
+                                            apply_update_event(item, menu, event.clone());
+                                        }
+                                    }
                                 }
                                 debug!("[{destination}{path}] received property change: {event:?}");
                                 tx.send(Event::Update(destination.to_string(), event))?;
@@ -529,15 +536,19 @@ impl Client {
                     let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
 
-                    if let Some((_, Some(menu))) = items
-                        .get_map()
-                        .lock()
-                        .expect("mutex lock should succeed")
-                        .get_mut(&destination)
-                    {
-                        apply_menu_diffs(menu, diffs.clone());
-                    } else {
-                        error!("could not find item in state");
+                    cfg_if::cfg_if! {
+                        if #[cfg(feature = "data")] {
+                            if let Some((_, Some(menu))) = items
+                                .get_map()
+                                .lock()
+                                .expect("mutex lock should succeed")
+                                .get_mut(&destination)
+                            {
+                                apply_menu_diffs(menu, diffs.clone());
+                            } else {
+                                error!("could not find item in state");
+                            }
+                        }
                     }
 
                     tx.send(Event::Update(
@@ -672,6 +683,7 @@ fn parse_address(address: &str) -> (&str, String) {
         })
 }
 
+#[cfg(feature = "data")]
 fn apply_update_event(
     item: &mut StatusNotifierItem,
     menu: &mut Option<TrayMenu>,
@@ -694,6 +706,7 @@ fn apply_update_event(
     }
 }
 
+#[cfg(feature = "data")]
 fn apply_menu_diffs(menu: &mut TrayMenu, diffs: Vec<MenuDiff>) {
     let mut diff_iter = diffs.into_iter().peekable();
     menu.submenus.iter_mut().for_each(|item| {
@@ -703,6 +716,7 @@ fn apply_menu_diffs(menu: &mut TrayMenu, diffs: Vec<MenuDiff>) {
     });
 }
 
+#[cfg(feature = "data")]
 fn apply_menu_item_diff(item: &mut MenuItem, update: MenuItemUpdate) {
     if let Some(label) = update.label {
         item.label = label;
