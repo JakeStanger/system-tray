@@ -1,3 +1,5 @@
+#[cfg(feature = "data")]
+use crate::data::apply_menu_diffs;
 use crate::data::TrayItemMap;
 use crate::dbus::dbus_menu_proxy::{DBusMenuProxy, PropertiesUpdate};
 use crate::dbus::notifier_item_proxy::StatusNotifierItemProxy;
@@ -361,6 +363,11 @@ impl Client {
                 Some(change) = props_changed.next() => {
                     match Self::get_update_event(change, &properties_proxy).await {
                         Ok(Some(event)) => {
+                                cfg_if::cfg_if! {
+                                    if #[cfg(feature = "data")] {
+                                        items.apply_update_event(destination, &event);
+                                    }
+                                }
                                 debug!("[{destination}{path}] received property change: {event:?}");
                                 tx.send(Event::Update(destination.to_string(), event))?;
                             }
@@ -520,6 +527,21 @@ impl Client {
                     let body = change.message().body();
                     let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
+
+                    cfg_if::cfg_if! {
+                        if #[cfg(feature = "data")] {
+                            if let Some((_, Some(menu))) = items
+                                .get_map()
+                                .lock()
+                                .expect("mutex lock should succeed")
+                                .get_mut(&destination)
+                            {
+                                apply_menu_diffs(menu, &diffs);
+                            } else {
+                                error!("could not find item in state");
+                            }
+                        }
+                    }
 
                     tx.send(Event::Update(
                         destination.to_string(),
