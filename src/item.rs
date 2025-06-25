@@ -148,9 +148,9 @@ impl Debug for IconPixmap {
 impl IconPixmap {
     /// Attempts to create a `Vec<IconPixmap>` from a provided `ZBus` `Array` type.
     /// This assumes the array is actually pixmap data.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// An error will return if any of the fields are missing are of the wrong type,
     /// indicating usually that the array passed in was likely not a `Pixmap`.
     pub fn from_array(array: &Array) -> Result<Vec<Self>> {

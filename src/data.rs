@@ -2,7 +2,6 @@ use crate::{
     item::StatusNotifierItem,
     menu::{MenuDiff, MenuItem, MenuItemUpdate, TrayMenu},
 };
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "data")]
@@ -22,7 +21,7 @@ pub(crate) struct TrayItemMap {
 impl TrayItemMap {
     pub(crate) fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(HashMap::default())),
+            inner: Arc::new(Mutex::new(BaseMap::default())),
         }
     }
 
