@@ -14,7 +14,7 @@ data = []
 dbusmenu-gtk3 = ["dep:gtk", "dep:dbusmenu-gtk3-sys"]
 
 [dependencies]
-zbus = { version = "5.3", default-features = false, features = ["tokio"] }
+zbus = { version = "5.7.1", default-features = false, features = ["tokio"] }
 tracing = "0.1.41"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
