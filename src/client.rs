@@ -5,7 +5,7 @@ use crate::dbus::notifier_watcher_proxy::StatusNotifierWatcherProxy;
 use crate::dbus::status_notifier_watcher::StatusNotifierWatcher;
 use crate::dbus::{self, OwnedValueExt};
 use crate::error::{Error, Result};
-use crate::item::{self, Status, StatusNotifierItem, Tooltip};
+use crate::item::{self, IconPixmap, Status, StatusNotifierItem, Tooltip};
 use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use tracing::{debug, error, trace, warn};
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
-use zbus::zvariant::{Structure, Value};
+use zbus::zvariant::{Array, Structure, Value};
 use zbus::{Connection, Message};
 
 use self::names::ITEM_OBJECT;
@@ -41,7 +41,10 @@ pub enum Event {
 #[derive(Debug, Clone)]
 pub enum UpdateEvent {
     AttentionIcon(Option<String>),
-    Icon(Option<String>),
+    Icon {
+        icon_name: Option<String>,
+        icon_pixmap: Vec<IconPixmap>,
+    },
     OverlayIcon(Option<String>),
     Status(Status),
     Title(Option<String>),
@@ -409,47 +412,55 @@ impl Client {
             .member()
             .ok_or(Error::InvalidData("Update message header missing `member`"))?;
 
-        let property_name = match member.as_str() {
-            "NewAttentionIcon" => "AttentionIconName",
-            "NewIcon" => "IconName",
-            "NewOverlayIcon" => "OverlayIconName",
-            "NewStatus" => "Status",
-            "NewTitle" => "Title",
-            "NewToolTip" => "ToolTip",
-            _ => &member.as_str()["New".len()..],
-        };
-
-        let property = properties_proxy
-            .get(
-                InterfaceName::from_static_str(PROPERTIES_INTERFACE)
-                    .expect("to be valid interface name"),
-                property_name,
-            )
-            .await?;
-
-        debug!("received tray item update: {member} -> {property:?}");
+        macro_rules! get_property {
+            ($name:expr) => {
+                properties_proxy
+                    .get(
+                        InterfaceName::from_static_str(PROPERTIES_INTERFACE)
+                            .expect("to be valid interface name"),
+                        $name,
+                    )
+                    .await?
+            };
+        }
 
         use UpdateEvent::*;
-        Ok(match member.as_str() {
-            "NewAttentionIcon" => Some(AttentionIcon(property.to_string().ok())),
-            "NewIcon" => Some(Icon(property.to_string().ok())),
-            "NewOverlayIcon" => Some(OverlayIcon(property.to_string().ok())),
-            "NewStatus" => Some(Status(
-                property.downcast_ref::<&str>().map(item::Status::from)?,
+        let property = match member.as_str() {
+            "NewAttentionIcon" => Some(AttentionIcon(
+                get_property!("AttentionIconName").to_string().ok(),
             )),
-            "NewTitle" => Some(Title(property.to_string().ok())),
-            "NewToolTip" => Some(Tooltip({
-                property
+            "NewIcon" => Some(Icon {
+                icon_name: get_property!("IconName").to_string().ok(),
+                icon_pixmap: get_property!("IconPixmap")
+                    .downcast_ref::<&Array>()
+                    .map_err(Into::into)
+                    .and_then(IconPixmap::from_array)?,
+            }),
+            "NewOverlayIcon" => Some(OverlayIcon(
+                get_property!("OverlayIconName").to_string().ok(),
+            )),
+            "NewStatus" => Some(Status(
+                get_property!("Status")
+                    .downcast_ref::<&str>()
+                    .map(item::Status::from)?,
+            )),
+            "NewTitle" => Some(Title(get_property!("Title").to_string().ok())),
+            "NewToolTip" => Some(Tooltip(
+                get_property!("ToolTip")
                     .downcast_ref::<&Structure>()
                     .ok()
                     .map(crate::item::Tooltip::try_from)
-                    .transpose()?
-            })),
+                    .transpose()?,
+            )),
             _ => {
                 warn!("received unhandled update event: {member}");
                 None
             }
-        })
+        };
+
+        debug!("received tray item update: {member} -> {property:?}");
+
+        Ok(property)
     }
 
     /// Watches the `DBusMenu` associated with an SNI item.

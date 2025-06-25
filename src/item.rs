@@ -146,7 +146,7 @@ impl Debug for IconPixmap {
 }
 
 impl IconPixmap {
-    fn from_array(array: &Array) -> Result<Vec<Self>> {
+    pub fn from_array(array: &Array) -> Result<Vec<Self>> {
         array
             .iter()
             .map(|pixmap| {
