@@ -87,7 +87,17 @@ impl TrayItemMap {
                 UpdateEvent::AttentionIcon(icon_name) => {
                     item.attention_icon_name = icon_name.clone()
                 }
-                UpdateEvent::Icon(icon_name) => item.icon_name = icon_name.clone(),
+                UpdateEvent::Icon {
+                    icon_name,
+                    icon_pixmap,
+                } => {
+                    item.icon_name = icon_name.clone();
+                    item.icon_pixmap = if icon_pixmap.is_empty() {
+                        None
+                    } else {
+                        Some(icon_pixmap.clone())
+                    }
+                }
                 UpdateEvent::OverlayIcon(icon_name) => item.overlay_icon_name = icon_name.clone(),
                 UpdateEvent::Status(status) => item.status = *status,
                 UpdateEvent::Title(title) => item.title = title.clone(),
