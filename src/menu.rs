@@ -289,7 +289,7 @@ impl TryFrom<&OwnedValue> for MenuItem {
                 .flatten()
                 .map(MenuType::from)
                 .unwrap_or_default();
-        };
+        }
 
         if let Some(Value::Array(array)) = fields.next() {
             let mut submenu = vec![];

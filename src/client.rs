@@ -131,7 +131,7 @@ impl Client {
         let pid = std::process::id();
         let mut i = 0;
         let wellknown = loop {
-            use zbus::fdo::RequestNameReply::*;
+            use zbus::fdo::RequestNameReply::{AlreadyOwner, Exists, InQueue, PrimaryOwner};
 
             i += 1;
             let wellknown = format!("org.freedesktop.StatusNotifierHost-{pid}-{i}");
@@ -414,6 +414,8 @@ impl Client {
         change: Message,
         properties_proxy: &PropertiesProxy<'_>,
     ) -> Result<Option<UpdateEvent>> {
+        use UpdateEvent::{AttentionIcon, Icon, OverlayIcon, Status, Title, Tooltip};
+        
         let header = change.header();
         let member = header
             .member()
@@ -430,8 +432,7 @@ impl Client {
                     .await?
             };
         }
-
-        use UpdateEvent::*;
+        
         let property = match member.as_str() {
             "NewAttentionIcon" => Some(AttentionIcon(
                 get_property!("AttentionIconName").to_string().ok(),
@@ -612,6 +613,10 @@ impl Client {
     ///
     /// ID refers to the menuitem id.
     /// Returns `needsUpdate`
+    /// 
+    /// # Errors
+    /// 
+    /// Errors if the proxy cannot be created.
     pub async fn about_to_show_menuitem(
         &self,
         address: String,
