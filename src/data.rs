@@ -1,5 +1,11 @@
-use crate::{item::StatusNotifierItem, menu::TrayMenu};
+use crate::{
+    item::StatusNotifierItem,
+    menu::{MenuDiff, MenuItem, MenuItemUpdate, TrayMenu},
+};
 use std::sync::{Arc, Mutex};
+
+#[cfg(feature = "data")]
+use {crate::client::UpdateEvent, tracing::error};
 
 #[cfg(feature = "data")]
 pub type BaseMap = std::collections::HashMap<String, (StatusNotifierItem, Option<TrayMenu>)>;
@@ -67,5 +73,68 @@ impl TrayItemMap {
                 let _ = dest;
             }
         }
+    }
+
+    #[cfg(feature = "data")]
+    pub(crate) fn apply_update_event(&self, dest: &str, event: &UpdateEvent) {
+        if let Some((item, menu)) = self
+            .inner
+            .lock()
+            .expect("mutex lock should succeed")
+            .get_mut(dest)
+        {
+            match event {
+                UpdateEvent::AttentionIcon(icon_name) => {
+                    item.attention_icon_name = icon_name.clone()
+                }
+                UpdateEvent::Icon(icon_name) => item.icon_name = icon_name.clone(),
+                UpdateEvent::OverlayIcon(icon_name) => item.overlay_icon_name = icon_name.clone(),
+                UpdateEvent::Status(status) => item.status = *status,
+                UpdateEvent::Title(title) => item.title = title.clone(),
+                UpdateEvent::Tooltip(tooltip) => item.tool_tip = tooltip.clone(),
+                UpdateEvent::Menu(tray_menu) => *menu = Some(tray_menu.clone()),
+                UpdateEvent::MenuConnect(menu) => item.menu = Some(menu.clone()),
+                UpdateEvent::MenuDiff(menu_diffs) => {
+                    if let Some(menu) = menu {
+                        apply_menu_diffs(menu, &menu_diffs);
+                    }
+                }
+            }
+        } else {
+            error!("could not find item in state");
+        }
+    }
+}
+
+pub fn apply_menu_diffs(tray_menu: &mut TrayMenu, diffs: &Vec<MenuDiff>) {
+    let mut diff_iter = diffs.into_iter().peekable();
+    tray_menu.submenus.iter_mut().for_each(|item| {
+        if let Some(diff) = diff_iter.next_if(|d| d.id == item.id) {
+            apply_menu_item_diff(item, &diff.update);
+        }
+    });
+}
+
+fn apply_menu_item_diff(menu_item: &mut MenuItem, update: &MenuItemUpdate) {
+    if let Some(label) = &update.label {
+        menu_item.label = label.clone();
+    }
+    if let Some(enabled) = update.enabled {
+        menu_item.enabled = enabled;
+    }
+    if let Some(visible) = update.visible {
+        menu_item.visible = visible;
+    }
+    if let Some(icon_name) = &update.icon_name {
+        menu_item.icon_name = icon_name.clone();
+    }
+    if let Some(icon_data) = &update.icon_data {
+        menu_item.icon_data = icon_data.clone();
+    }
+    if let Some(toggle_state) = update.toggle_state {
+        menu_item.toggle_state = toggle_state;
+    }
+    if let Some(disposition) = update.disposition {
+        menu_item.disposition = disposition;
     }
 }
