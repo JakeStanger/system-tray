@@ -95,11 +95,7 @@ impl TrayItemMap {
                     icon_pixmap,
                 } => {
                     item.icon_name.clone_from(icon_name);
-                    item.icon_pixmap = if icon_pixmap.is_empty() {
-                        None
-                    } else {
-                        Some(icon_pixmap.clone())
-                    }
+                    item.icon_pixmap.clone_from(icon_pixmap);
                 }
                 UpdateEvent::OverlayIcon(icon_name) => item.overlay_icon_name.clone_from(icon_name),
                 UpdateEvent::Status(status) => item.status = *status,
