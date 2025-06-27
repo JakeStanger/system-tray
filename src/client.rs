@@ -45,7 +45,7 @@ pub enum UpdateEvent {
     AttentionIcon(Option<String>),
     Icon {
         icon_name: Option<String>,
-        icon_pixmap: Vec<IconPixmap>,
+        icon_pixmap: Option<Vec<IconPixmap>>,
     },
     OverlayIcon(Option<String>),
     Status(Status),
@@ -423,40 +423,71 @@ impl Client {
 
         macro_rules! get_property {
             ($name:expr) => {
-                properties_proxy
+                match properties_proxy
                     .get(
                         InterfaceName::from_static_str(PROPERTIES_INTERFACE)
                             .expect("to be valid interface name"),
                         $name,
                     )
-                    .await?
+                    .await
+                {
+                    Ok(v) => Ok(Some(v)),
+                    Err(e) => match e {
+                        // Some properties may not be set, and this error will be raised.
+                        zbus::fdo::Error::InvalidArgs(_) => {
+                            warn!("{e}");
+                            Ok(None)
+                        }
+                        _ => Err(Into::<Error>::into(e)),
+                    },
+                }?
             };
         }
 
         let property = match member.as_str() {
             "NewAttentionIcon" => Some(AttentionIcon(
-                get_property!("AttentionIconName").to_string().ok(),
+                get_property!("AttentionIconName")
+                    .as_ref()
+                    .map(OwnedValueExt::to_string)
+                    .transpose()?,
             )),
             "NewIcon" => Some(Icon {
-                icon_name: get_property!("IconName").to_string().ok(),
+                icon_name: get_property!("IconName")
+                    .as_ref()
+                    .map(OwnedValueExt::to_string)
+                    .transpose()?,
                 icon_pixmap: get_property!("IconPixmap")
-                    .downcast_ref::<&Array>()
-                    .map_err(Into::into)
-                    .and_then(IconPixmap::from_array)?,
+                    .as_deref()
+                    .map(Value::downcast_ref::<&Array>)
+                    .transpose()?
+                    .map(IconPixmap::from_array)
+                    .transpose()?,
             }),
             "NewOverlayIcon" => Some(OverlayIcon(
-                get_property!("OverlayIconName").to_string().ok(),
+                get_property!("OverlayIconName")
+                    .as_ref()
+                    .map(OwnedValueExt::to_string)
+                    .transpose()?,
             )),
             "NewStatus" => Some(Status(
                 get_property!("Status")
-                    .downcast_ref::<&str>()
-                    .map(item::Status::from)?,
+                    .as_deref()
+                    .map(Value::downcast_ref::<&str>)
+                    .transpose()?
+                    .map(item::Status::from)
+                    .unwrap_or_default(), // NOTE: i'm assuming status is always set
             )),
-            "NewTitle" => Some(Title(get_property!("Title").to_string().ok())),
+            "NewTitle" => Some(Title(
+                get_property!("Title")
+                    .as_ref()
+                    .map(OwnedValueExt::to_string)
+                    .transpose()?,
+            )),
             "NewToolTip" => Some(Tooltip(
                 get_property!("ToolTip")
-                    .downcast_ref::<&Structure>()
-                    .ok()
+                    .as_deref()
+                    .map(Value::downcast_ref::<&Structure>)
+                    .transpose()?
                     .map(crate::item::Tooltip::try_from)
                     .transpose()?,
             )),
