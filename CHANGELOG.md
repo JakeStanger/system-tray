@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.1] - 2025-06-27
+### :bug: Bug Fixes
+- [`cf2d0b3`](https://github.com/JakeStanger/system-tray/commit/cf2d0b36904cf5fff028f821fbe0c6680761c2f7) - take in account of InvalidArgs caused by no property *(commit by [@ogios](https://github.com/ogios))*
+
+
 ## [v0.8.0] - 2025-06-25
 ### :sparkles: New Features
 - [`e107d45`](https://github.com/JakeStanger/system-tray/commit/e107d45a97c3c5e7d8d459c0d00e172132b19d2b) - make `Client::items` optional behind feature flag *(PR [#18](https://github.com/JakeStanger/system-tray/pull/18) by [@ogios](https://github.com/ogios))*
@@ -36,3 +41,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [v0.7.0]: https://github.com/JakeStanger/system-tray/compare/v0.6.0...v0.7.0
 [v0.8.0]: https://github.com/JakeStanger/system-tray/compare/v0.7.0...v0.8.0
+[v0.8.1]: https://github.com/JakeStanger/system-tray/compare/v0.8.0...v0.8.1
