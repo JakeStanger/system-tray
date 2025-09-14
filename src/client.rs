@@ -440,37 +440,57 @@ impl Client {
                         }
                         _ => Err(Into::<Error>::into(e)),
                     },
-                }?
+                }
             };
         }
 
         let property = match member.as_str() {
             "NewAttentionIcon" => Some(AttentionIcon(
-                get_property!("AttentionIconName")
+                get_property!("AttentionIconName")?
                     .as_ref()
                     .map(OwnedValueExt::to_string)
                     .transpose()?,
             )),
-            "NewIcon" => Some(Icon {
-                icon_name: get_property!("IconName")
-                    .as_ref()
-                    .map(OwnedValueExt::to_string)
-                    .transpose()?,
-                icon_pixmap: get_property!("IconPixmap")
-                    .as_deref()
-                    .map(Value::downcast_ref::<&Array>)
-                    .transpose()?
-                    .map(IconPixmap::from_array)
-                    .transpose()?,
-            }),
+            "NewIcon" => {
+                let icon_name = match get_property!("IconName") {
+                    Ok(name) => name,
+                    Err(e) => {
+                        warn!("Error getting IconName: {e:?}");
+                        None
+                    }
+                }
+                .as_ref()
+                .map(OwnedValueExt::to_string)
+                .transpose()
+                .ok()
+                .flatten();
+
+                let icon_pixmap = match get_property!("IconPixmap") {
+                    Ok(pixmap) => pixmap,
+                    Err(e) => {
+                        warn!("Error getting IconPixmap: {e:?}");
+                        None
+                    }
+                }
+                .as_deref()
+                .map(Value::downcast_ref::<&Array>)
+                .transpose()?
+                .map(IconPixmap::from_array)
+                .transpose()?;
+
+                Some(Icon {
+                    icon_name,
+                    icon_pixmap,
+                })
+            }
             "NewOverlayIcon" => Some(OverlayIcon(
-                get_property!("OverlayIconName")
+                get_property!("OverlayIconName")?
                     .as_ref()
                     .map(OwnedValueExt::to_string)
                     .transpose()?,
             )),
             "NewStatus" => Some(Status(
-                get_property!("Status")
+                get_property!("Status")?
                     .as_deref()
                     .map(Value::downcast_ref::<&str>)
                     .transpose()?
@@ -478,13 +498,13 @@ impl Client {
                     .unwrap_or_default(), // NOTE: i'm assuming status is always set
             )),
             "NewTitle" => Some(Title(
-                get_property!("Title")
+                get_property!("Title")?
                     .as_ref()
                     .map(OwnedValueExt::to_string)
                     .transpose()?,
             )),
             "NewToolTip" => Some(Tooltip(
-                get_property!("ToolTip")
+                get_property!("ToolTip")?
                     .as_deref()
                     .map(Value::downcast_ref::<&Structure>)
                     .transpose()?
