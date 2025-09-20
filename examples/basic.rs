@@ -2,6 +2,8 @@ use system_tray::client::Client;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
+
     let client = Client::new().await.unwrap();
     let mut tray_rx = client.subscribe();
 
