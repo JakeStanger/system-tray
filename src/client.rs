@@ -12,10 +12,11 @@ use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
 use futures_lite::StreamExt;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
-use tokio::sync::broadcast;
-use tokio::time::timeout;
+use tokio::sync::{broadcast, mpsc};
+use tokio::time::{sleep, timeout, Instant};
 use tracing::{debug, error, trace, warn};
 use zbus::fdo::{DBusProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
@@ -259,7 +260,7 @@ impl Client {
         connection: Connection,
         tx: broadcast::Sender<Event>,
         items: TrayItemMap,
-    ) -> crate::error::Result<()> {
+    ) -> Result<()> {
         let (destination, path) = parse_address(address);
 
         let properties_proxy = PropertiesProxy::builder(&connection)
@@ -321,7 +322,7 @@ impl Client {
         destination: &str,
         path: &str,
         properties_proxy: &PropertiesProxy<'_>,
-    ) -> crate::error::Result<StatusNotifierItem> {
+    ) -> Result<StatusNotifierItem> {
         let properties = properties_proxy
             .get_all(
                 InterfaceName::from_static_str(PROPERTIES_INTERFACE)
@@ -349,7 +350,7 @@ impl Client {
         properties_proxy: PropertiesProxy<'_>,
         tx: broadcast::Sender<Event>,
         items: TrayItemMap,
-    ) -> crate::error::Result<()> {
+    ) -> Result<()> {
         let notifier_item_proxy = StatusNotifierItemProxy::builder(connection)
             .destination(destination)?
             .path(path)?
@@ -533,14 +534,17 @@ impl Client {
         connection: &Connection,
         tx: broadcast::Sender<Event>,
         items: TrayItemMap,
-    ) -> crate::error::Result<()> {
+    ) -> Result<()> {
+        const LAYOUT_UPDATE_INTERVAL_MS: Duration = Duration::from_millis(50);
+
         let dbus_menu_proxy = DBusMenuProxy::builder(connection)
             .destination(destination.as_str())?
             .path(menu_path)?
             .build()
             .await?;
 
-        let menu = dbus_menu_proxy.get_layout(0, 10, &[]).await?;
+        debug!("[{destination}{menu_path}] getting initial menu");
+        let menu = dbus_menu_proxy.get_layout(0, -1, &[]).await?;
         let menu = TrayMenu::try_from(menu)?;
 
         items.update_menu(&destination, &menu);
@@ -612,19 +616,16 @@ impl Client {
                     let update: PropertiesUpdate= body.deserialize::<PropertiesUpdate>()?;
                     let diffs = Vec::try_from(update)?;
 
-                    cfg_if::cfg_if! {
-                        if #[cfg(feature = "data")] {
-                            if let Some((_, Some(menu))) = items
-                                .get_map()
-                                .lock()
-                                .expect("mutex lock should succeed")
-                                .get_mut(&destination)
-                            {
-                                apply_menu_diffs(menu, &diffs);
-                            } else {
-                                error!("could not find item in state");
-                            }
-                        }
+                    #[cfg(feature = "data")]
+                    if let Some((_, Some(menu))) = items
+                        .get_map()
+                        .lock()
+                        .expect("mutex lock should succeed")
+                        .get_mut(&destination)
+                    {
+                        apply_menu_diffs(menu, &diffs);
+                    } else {
+                        error!("could not find item in state");
                     }
 
                     tx.send(Event::Update(
@@ -643,7 +644,7 @@ impl Client {
     async fn get_notifier_item_proxy(
         &self,
         address: String,
-    ) -> crate::error::Result<StatusNotifierItemProxy<'_>> {
+    ) -> Result<StatusNotifierItemProxy<'_>> {
         let proxy = StatusNotifierItemProxy::builder(&self.connection)
             .destination(address)?
             .path(ITEM_OBJECT)?
@@ -656,12 +657,13 @@ impl Client {
         &self,
         address: String,
         menu_path: String,
-    ) -> crate::error::Result<DBusMenuProxy<'_>> {
+    ) -> Result<DBusMenuProxy<'_>> {
         let proxy = DBusMenuProxy::builder(&self.connection)
             .destination(address)?
             .path(menu_path)?
             .build()
             .await?;
+
         Ok(proxy)
     }
 
@@ -694,7 +696,7 @@ impl Client {
         address: String,
         menu_path: String,
         id: i32,
-    ) -> crate::error::Result<bool> {
+    ) -> Result<bool> {
         let proxy = self.get_menu_proxy(address, menu_path).await?;
         Ok(proxy.about_to_show(id).await?)
     }
@@ -709,7 +711,7 @@ impl Client {
     /// # Panics
     ///
     /// If the system time is somehow before the Unix epoch.
-    pub async fn activate(&self, req: ActivateRequest) -> crate::error::Result<()> {
+    pub async fn activate(&self, req: ActivateRequest) -> Result<()> {
         macro_rules! timeout_event {
             ($event:expr) => {
                 if timeout(Duration::from_secs(1), $event).await.is_err() {
