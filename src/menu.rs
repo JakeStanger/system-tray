@@ -2,6 +2,7 @@ use crate::dbus::dbus_menu_proxy::{MenuLayout, PropertiesUpdate, UpdatedProps};
 use crate::error::{Error, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
@@ -15,7 +16,7 @@ pub struct TrayMenu {
 
 /// List of properties taken from:
 /// <https://github.com/AyatanaIndicators/libdbusmenu/blob/4d03141aea4e2ad0f04ab73cf1d4f4bcc4a19f6c/libdbusmenu-glib/dbus-menu.xml#L75>
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct MenuItem {
     /// Unique numeric id
     pub id: i32,
@@ -72,6 +73,34 @@ pub struct MenuItem {
     pub submenu: Vec<MenuItem>,
 }
 
+impl Debug for MenuItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MenuItem")
+            .field("id", &self.id)
+            .field("menu_type", &self.menu_type)
+            .field("label", &self.label)
+            .field("enabled", &self.enabled)
+            .field("visible", &self.visible)
+            .field("icon_name", &self.icon_name)
+            .field(
+                "icon_data",
+                &format!(
+                    "<length: {}>",
+                    self.icon_data
+                        .as_ref()
+                        .map_or("none".to_string(), |d| d.len().to_string())
+                ),
+            )
+            .field("shortcut", &self.shortcut)
+            .field("toggle_type", &self.toggle_type)
+            .field("toggle_state", &self.toggle_state)
+            .field("children_display", &self.children_display)
+            .field("disposition", &self.disposition)
+            .field("submenu", &self.submenu)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct MenuDiff {
     pub id: i32,
@@ -79,7 +108,7 @@ pub struct MenuDiff {
     pub remove: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct MenuItemUpdate {
     /// Text of the item, except that:
     ///  - two consecutive underscore characters "__" are displayed as a
@@ -110,6 +139,28 @@ pub struct MenuItemUpdate {
     /// user should be presented.
     /// See [`Disposition`]
     pub disposition: Option<Disposition>,
+}
+
+impl Debug for MenuItemUpdate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MenuItemUpdate")
+            .field("label", &self.label)
+            .field("enabled", &self.enabled)
+            .field("visible", &self.visible)
+            .field("icon_name", &self.icon_name)
+            .field(
+                "icon_data",
+                &format!(
+                    "<length: {:?}>",
+                    self.icon_data.as_ref().map(|d| d
+                        .as_ref()
+                        .map_or("none".to_string(), |d| d.len().to_string()))
+                ),
+            )
+            .field("toggle_state", &self.toggle_state)
+            .field("disposition", &self.disposition)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
