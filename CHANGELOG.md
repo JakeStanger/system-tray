@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.3] - 2025-09-20
+### :bug: Bug Fixes
+- [`fdfb100`](https://github.com/JakeStanger/system-tray/commit/fdfb100ccc9b237b5ebc0fd6b4d3e6fe150804eb) - **client**: debounce menu layout updates *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+### :recycle: Refactors
+- [`f7a1551`](https://github.com/JakeStanger/system-tray/commit/f7a15519c900f773e4ed052a847e9a0ae1bf389e) - **menu**: avoid logging full icon data in debug impl *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+- [`dfaea12`](https://github.com/JakeStanger/system-tray/commit/dfaea12c8bafa2599dee0c2e31f1ad033ce53cae) - **client**: tidy code *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+
 ## [v0.8.1] - 2025-06-27
 ### :bug: Bug Fixes
 - [`cf2d0b3`](https://github.com/JakeStanger/system-tray/commit/cf2d0b36904cf5fff028f821fbe0c6680761c2f7) - take in account of InvalidArgs caused by no property *(commit by [@ogios](https://github.com/ogios))*
@@ -42,3 +51,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.7.0]: https://github.com/JakeStanger/system-tray/compare/v0.6.0...v0.7.0
 [v0.8.0]: https://github.com/JakeStanger/system-tray/compare/v0.7.0...v0.8.0
 [v0.8.1]: https://github.com/JakeStanger/system-tray/compare/v0.8.0...v0.8.1
+[v0.8.3]: https://github.com/JakeStanger/system-tray/compare/v0.8.2...v0.8.3
