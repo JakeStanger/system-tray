@@ -553,12 +553,33 @@ impl Client {
         let mut layout_updated = dbus_menu_proxy.receive_layout_updated().await?;
         let mut properties_updated = dbus_menu_proxy.receive_items_properties_updated().await?;
 
+        let last_layout_update = Arc::new(Mutex::new(Instant::now()));
+        let (layout_tx, mut layout_rx) = mpsc::channel(4);
+
         loop {
             tokio::select!(
-                Some(_) = layout_updated.next() => {
+                Some(ev) = layout_updated.next() => {
+                    trace!("received layout update");
+
+                    let now = Instant::now();
+                    *last_layout_update.lock().expect("should get lock") = now;
+
+                    let args = ev.args()?;
+
+                    let last_layout_update = last_layout_update.clone();
+                    let layout_tx = layout_tx.clone();
+                    spawn(async move {
+                        sleep(LAYOUT_UPDATE_INTERVAL_MS).await;
+                        if *last_layout_update.lock().expect("should get lock") == now {
+                            trace!("dispatching layout update");
+                            layout_tx.send(args.parent).await.expect("should send");
+                        }
+                    });
+                }
+                Some(layout_parent) = layout_rx.recv() => {
                     debug!("[{destination}{menu_path}] layout update");
 
-                    let get_layout = dbus_menu_proxy.get_layout(0, 10, &[]);
+                    let get_layout = dbus_menu_proxy.get_layout(layout_parent, -1, &[]);
 
                     let menu = match timeout(Duration::from_secs(1), get_layout).await {
                         Ok(Ok(menu)) => {
