@@ -27,10 +27,7 @@ async fn main() {
 ### `dbusmenu-gtk3`
 
 Although the library provides a built-in Rust-native implementation of the `DBusMenu` protocol,
-this has a few issues:
-
-- There are some known bugs. For example, opening a file in VLC will break its menu.
-- If you are creating a menu UI, you need to parse the whole tree set up each element, and track all changes manually.
+if you are creating a menu UI, you need to parse the whole tree set up each element, and track all changes manually.
 
 To circumvent this, bindings to the `dbusmenu-gtk3` system library are included. 
 When the feature of the same name is enabled, you can listen for `UpdateEvent::MenuConnect`
@@ -49,6 +46,8 @@ fn on_update(update: system_tray::Event) {
 
 > [!NOTE]
 > This feature is disabled by default to reduce compilation times.
+> You must have `libdbusmenu-gtk3` installed on your system to build and use this feature.
+> No equivalent library exists for GTK4.
 
 ## Attributions
 
