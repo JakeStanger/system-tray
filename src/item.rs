@@ -88,7 +88,7 @@ pub struct StatusNotifierItem {
     pub menu: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, Default, Eq, PartialEq, Hash)]
 pub enum Category {
     #[default]
     ApplicationStatus,
@@ -108,7 +108,7 @@ impl From<&str> for Category {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, Default, Eq, PartialEq, Hash)]
 pub enum Status {
     #[default]
     Unknown,
@@ -128,7 +128,7 @@ impl From<&str> for Status {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct IconPixmap {
     pub width: i32,
     pub height: i32,

@@ -65,7 +65,7 @@ pub enum UpdateEvent {
 
 /// A request to 'activate' one of the menu items,
 /// typically sent when it is clicked.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ActivateRequest {
     /// Submenu ID
     MenuItem {
