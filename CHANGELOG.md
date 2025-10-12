@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.4] - 2025-10-12
+### :sparkles: New Features
+- [`02740b1`](https://github.com/JakeStanger/system-tray/commit/02740b1f9c730243cafb0b87e2e344014e84c547) - derive `Eq`, `PartialEq`, `Hash` where it makes sense *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+### :memo: Documentation Changes
+- [`8c19f78`](https://github.com/JakeStanger/system-tray/commit/8c19f78b7a1fde876a2afd52a99cfe84f73e5f4d) - **readme**: update libdbusmenu-gtk3 notes *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+
 ## [v0.8.3] - 2025-09-20
 ### :bug: Bug Fixes
 - [`fdfb100`](https://github.com/JakeStanger/system-tray/commit/fdfb100ccc9b237b5ebc0fd6b4d3e6fe150804eb) - **client**: debounce menu layout updates *(commit by [@JakeStanger](https://github.com/JakeStanger))*
@@ -52,3 +60,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.8.0]: https://github.com/JakeStanger/system-tray/compare/v0.7.0...v0.8.0
 [v0.8.1]: https://github.com/JakeStanger/system-tray/compare/v0.8.0...v0.8.1
 [v0.8.3]: https://github.com/JakeStanger/system-tray/compare/v0.8.2...v0.8.3
+[v0.8.4]: https://github.com/JakeStanger/system-tray/compare/v0.8.3...v0.8.4
