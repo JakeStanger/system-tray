@@ -1,12 +1,12 @@
 use crate::dbus::dbus_menu_proxy::{MenuLayout, PropertiesUpdate, UpdatedProps};
 use crate::error::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 /// A menu that should be displayed when clicking corresponding tray icon
-#[derive(Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TrayMenu {
     /// The unique identifier of the menu
     pub id: u32,
@@ -16,7 +16,7 @@ pub struct TrayMenu {
 
 /// List of properties taken from:
 /// <https://github.com/AyatanaIndicators/libdbusmenu/blob/4d03141aea4e2ad0f04ab73cf1d4f4bcc4a19f6c/libdbusmenu-glib/dbus-menu.xml#L75>
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Serialize, Default)]
 pub struct MenuItem {
     /// Unique numeric id
     pub id: i32,
@@ -101,14 +101,14 @@ impl Debug for MenuItem {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct MenuDiff {
     pub id: i32,
     pub update: MenuItemUpdate,
     pub remove: Vec<String>,
 }
 
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Serialize, Default)]
 pub struct MenuItemUpdate {
     /// Text of the item, except that:
     ///  - two consecutive underscore characters "__" are displayed as a
@@ -163,7 +163,7 @@ impl Debug for MenuItemUpdate {
     }
 }
 
-#[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Default)]
 pub enum MenuType {
     ///  a separator
     Separator,
@@ -181,7 +181,7 @@ impl From<&str> for MenuType {
     }
 }
 
-#[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Default)]
 pub enum ToggleType {
     /// Item is an independent togglable item
     Checkmark,
@@ -204,7 +204,7 @@ impl From<&str> for ToggleType {
 }
 
 /// Describe the current state of a "togglable" item.
-#[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Default)]
 pub enum ToggleState {
     /// This item is toggled
     #[default]
@@ -225,7 +225,7 @@ impl From<i32> for ToggleState {
     }
 }
 
-#[derive(Debug, Deserialize, Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Default)]
 pub enum Disposition {
     /// a standard menu item
     #[default]
