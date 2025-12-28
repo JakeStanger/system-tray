@@ -549,10 +549,7 @@ impl Client {
 
         items.update_menu(&destination, &menu);
 
-        tx.send(Event::Update(
-            destination.to_string(),
-            UpdateEvent::Menu(menu),
-        ))?;
+        tx.send(Event::Update(destination.clone(), UpdateEvent::Menu(menu)))?;
 
         let mut layout_updated = dbus_menu_proxy.receive_layout_updated().await?;
         let mut properties_updated = dbus_menu_proxy.receive_items_properties_updated().await?;
@@ -607,7 +604,7 @@ impl Client {
                     debug!("sending new menu for '{destination}'");
                     trace!("new menu for '{destination}': {menu:?}");
                     tx.send(Event::Update(
-                        destination.to_string(),
+                        destination.clone(),
                         UpdateEvent::Menu(menu),
                     ))?;
                 }
@@ -629,7 +626,7 @@ impl Client {
                     }
 
                     tx.send(Event::Update(
-                        destination.to_string(),
+                        destination.clone(),
                         UpdateEvent::MenuDiff(diffs),
                     ))?;
 
