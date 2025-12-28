@@ -34,21 +34,21 @@ pub(crate) struct SubMenuLayout {
 #[allow(dead_code)]
 type GroupProperties = Vec<(i32, HashMap<String, zbus::zvariant::OwnedValue>)>;
 
-#[derive(Deserialize, Type, Debug, Clone)]
+#[derive(Deserialize, Serialize, Type, Debug, Clone)]
 pub struct PropertiesUpdate<'a> {
     #[serde(borrow)]
     pub(crate) updated: Vec<UpdatedProps<'a>>,
     pub(crate) removed: Vec<RemovedProps<'a>>,
 }
 
-#[derive(Deserialize, Type, Debug, Clone)]
+#[derive(Deserialize, Serialize, Type, Debug, Clone)]
 pub struct UpdatedProps<'a> {
     pub(crate) id: i32,
     #[serde(borrow)]
     pub(crate) fields: HashMap<&'a str, Value<'a>>,
 }
 
-#[derive(Deserialize, Type, Debug, Clone)]
+#[derive(Deserialize, Serialize, Type, Debug, Clone)]
 pub struct RemovedProps<'a> {
     pub(crate) id: i32,
     #[serde(borrow)]

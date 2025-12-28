@@ -1,12 +1,12 @@
 use crate::dbus::DBusProps;
 use crate::error::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use zbus::zvariant::{Array, Structure};
 
 /// Represents an item to display inside the tray.
 /// <https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/>
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct StatusNotifierItem {
     /// A name that should be unique for this application and consistent between sessions, such as the application name itself.
     pub id: String,
@@ -88,7 +88,7 @@ pub struct StatusNotifierItem {
     pub menu: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Hash)]
 pub enum Category {
     #[default]
     ApplicationStatus,
@@ -108,7 +108,7 @@ impl From<&str> for Category {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Hash)]
 pub enum Status {
     #[default]
     Unknown,
@@ -128,7 +128,7 @@ impl From<&str> for Status {
     }
 }
 
-#[derive(Deserialize, Clone, Eq, PartialEq, Hash)]
+#[derive(Deserialize, Serialize, Clone, Eq, PartialEq, Hash)]
 pub struct IconPixmap {
     pub width: i32,
     pub height: i32,
@@ -192,7 +192,7 @@ impl IconPixmap {
 
 /// Data structure that describes extra information associated to this item, that can be visualized for instance by a tooltip
 /// (or by any other mean the visualization consider appropriate.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Tooltip {
     pub icon_name: String,
     pub icon_data: Vec<IconPixmap>,
