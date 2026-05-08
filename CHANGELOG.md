@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.6] - 2026-05-08
+### :recycle: Refactors
+- [`9bbb451`](https://github.com/JakeStanger/system-tray/commit/9bbb451e5d8fc8f00a252db6ad31135eec8bbfad) - **client**: tidy, fix clippy lints *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+
 ## [v0.8.5] - 2025-12-28
 ### :sparkles: New Features
 - [`608b24f`](https://github.com/JakeStanger/system-tray/commit/608b24f215fb555f59fe57f675cddbffbff49ba7) - implement Serialize for various structs *(PR [#27](https://github.com/JakeStanger/system-tray/pull/27) by [@maxdexh](https://github.com/maxdexh))*
@@ -67,3 +72,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.8.3]: https://github.com/JakeStanger/system-tray/compare/v0.8.2...v0.8.3
 [v0.8.4]: https://github.com/JakeStanger/system-tray/compare/v0.8.3...v0.8.4
 [v0.8.5]: https://github.com/JakeStanger/system-tray/compare/v0.8.4...v0.8.5
+[v0.8.6]: https://github.com/JakeStanger/system-tray/compare/v0.8.5...v0.8.6
