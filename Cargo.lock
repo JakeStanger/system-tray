@@ -1080,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "system-tray"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "cfg-if",
  "dbusmenu-gtk3-sys",
