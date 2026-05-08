@@ -367,14 +367,16 @@ impl Client {
                 Some(change) = props_changed.next() => {
                     match Self::get_update_event(change, &properties_proxy).await {
                         Ok(Some(event)) => {
-                                cfg_if::cfg_if! {
-                                    if #[cfg(feature = "data")] {
-                                        items.apply_update_event(destination, &event);
-                                    }
+                            debug!("[{destination}{path}] received property change: {event:?}");
+
+                            cfg_if::cfg_if! {
+                                if #[cfg(feature = "data")] {
+                                    items.apply_update_event(destination, &event);
                                 }
-                                debug!("[{destination}{path}] received property change: {event:?}");
-                                tx.send(Event::Update(destination.to_string(), event))?;
                             }
+
+                            tx.send(Event::Update(destination.to_string(), event))?;
+                        }
                         Err(e) => {
                             error!("Error parsing update properties from {destination}{path}: {e:?}");
                         }
@@ -453,31 +455,27 @@ impl Client {
                     .transpose()?,
             )),
             "NewIcon" => {
-                let icon_name = match get_property!("IconName") {
-                    Ok(name) => name,
-                    Err(e) => {
+                let icon_name = get_property!("IconName")
+                    .unwrap_or_else(|e| {
                         warn!("Error getting IconName: {e:?}");
                         None
-                    }
-                }
-                .as_ref()
-                .map(OwnedValueExt::to_string)
-                .transpose()
-                .ok()
-                .flatten();
+                    })
+                    .as_ref()
+                    .map(OwnedValueExt::to_string)
+                    .transpose()
+                    .ok()
+                    .flatten();
 
-                let icon_pixmap = match get_property!("IconPixmap") {
-                    Ok(pixmap) => pixmap,
-                    Err(e) => {
+                let icon_pixmap = get_property!("IconPixmap")
+                    .unwrap_or_else(|e| {
                         warn!("Error getting IconPixmap: {e:?}");
                         None
-                    }
-                }
-                .as_deref()
-                .map(Value::downcast_ref::<&Array>)
-                .transpose()?
-                .map(IconPixmap::from_array)
-                .transpose()?;
+                    })
+                    .as_deref()
+                    .map(Value::downcast_ref::<&Array>)
+                    .transpose()?
+                    .map(IconPixmap::from_array)
+                    .transpose()?;
 
                 Some(Icon {
                     icon_name,
