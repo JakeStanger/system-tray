@@ -473,9 +473,9 @@ impl Client {
                     })
                     .as_deref()
                     .map(Value::downcast_ref::<&Array>)
-                    .transpose()?
+                    .and_then(|res| res.ok())
                     .map(IconPixmap::from_array)
-                    .transpose()?;
+                    .and_then(|res| res.ok());
 
                 Some(Icon {
                     icon_name,
