@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.7] - 2026-06-20
+### :bug: Bug Fixes
+- [`57de0f4`](https://github.com/JakeStanger/system-tray/commit/57de0f400f04a029abb6a04564ae1785edea77ad) - **client**: handle invalid icon pixmap *(commit by [@davidaf3](https://github.com/davidaf3))*
+- [`a3ea0a7`](https://github.com/JakeStanger/system-tray/commit/a3ea0a7c042426269f4920b4bafbf425e47684cb) - **client**: handle invalid icon pixmap *(PR [#28](https://github.com/JakeStanger/system-tray/pull/28) by [@JakeStanger](https://github.com/JakeStanger))*
+
+
 ## [v0.8.6] - 2026-05-08
 ### :recycle: Refactors
 - [`9bbb451`](https://github.com/JakeStanger/system-tray/commit/9bbb451e5d8fc8f00a252db6ad31135eec8bbfad) - **client**: tidy, fix clippy lints *(commit by [@JakeStanger](https://github.com/JakeStanger))*
@@ -73,3 +79,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.8.4]: https://github.com/JakeStanger/system-tray/compare/v0.8.3...v0.8.4
 [v0.8.5]: https://github.com/JakeStanger/system-tray/compare/v0.8.4...v0.8.5
 [v0.8.6]: https://github.com/JakeStanger/system-tray/compare/v0.8.5...v0.8.6
+[v0.8.7]: https://github.com/JakeStanger/system-tray/compare/v0.8.6...v0.8.7
