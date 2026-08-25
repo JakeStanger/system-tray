@@ -83,6 +83,38 @@ pub enum ActivateRequest {
 }
 
 const PROPERTIES_INTERFACE: &str = "org.kde.StatusNotifierItem";
+const ITEM_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(200),
+    Duration::from_millis(750),
+];
+
+async fn retry_with_delays<T, E, I, F, Fut, N>(
+    delays: I,
+    mut operation: F,
+    mut on_retry: N,
+) -> std::result::Result<T, E>
+where
+    I: IntoIterator<Item = Duration>,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    N: FnMut(&E, Duration),
+{
+    let mut delays = delays.into_iter();
+
+    loop {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(error) => match delays.next() {
+                Some(delay) => {
+                    on_retry(&error, delay);
+                    sleep(delay).await;
+                }
+                None => return Err(error),
+            },
+        }
+    }
+}
 
 async fn process_stream<S, T, E, F, Fut, N>(mut stream: S, mut operation: F, mut on_error: N)
 where
@@ -232,7 +264,7 @@ impl Client {
                         Self::handle_item(&item, connection.clone(), tx.clone(), items.clone())
                             .await
                     {
-                        error!("{err}");
+                        error!("failed to initialize tray item {item}: {err}");
                     }
                 }
 
@@ -345,20 +377,22 @@ impl Client {
         path: &str,
         properties_proxy: &PropertiesProxy<'_>,
     ) -> Result<StatusNotifierItem> {
-        let properties = properties_proxy
-            .get_all(
-                InterfaceName::from_static_str(PROPERTIES_INTERFACE)
-                    .expect("to be valid interface name"),
-            )
-            .await;
-
-        let properties = match properties {
-            Ok(properties) => properties,
-            Err(err) => {
-                error!("Error fetching properties from {destination}{path}: {err:?}");
-                return Err(err.into());
-            }
-        };
+        let properties = retry_with_delays(
+            ITEM_RETRY_DELAYS,
+            || {
+                properties_proxy.get_all(
+                    InterfaceName::from_static_str(PROPERTIES_INTERFACE)
+                        .expect("to be valid interface name"),
+                )
+            },
+            |error, delay| {
+                warn!(
+                    "failed to read tray item {destination}{path}: {error}; retrying in {} ms",
+                    delay.as_millis()
+                );
+            },
+        )
+        .await?;
 
         StatusNotifierItem::try_from(DBusProps(properties))
     }
@@ -785,6 +819,46 @@ fn parse_address(address: &str) -> (&str, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn item_initialization_retries_transient_failures() {
+        use std::{cell::Cell, future::ready};
+
+        let attempts = Cell::new(0);
+        let result = retry_with_delays(
+            [Duration::ZERO; 2],
+            || {
+                let attempt = attempts.get() + 1;
+                attempts.set(attempt);
+                ready((attempt == 3).then_some(attempt).ok_or(attempt))
+            },
+            |_, _| {},
+        )
+        .await;
+
+        assert_eq!(result, Ok(3));
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[tokio::test]
+    async fn item_initialization_returns_last_failure() {
+        use std::{cell::Cell, future::ready};
+
+        let attempts = Cell::new(0);
+        let result = retry_with_delays(
+            [Duration::ZERO; 2],
+            || {
+                let attempt = attempts.get() + 1;
+                attempts.set(attempt);
+                ready(Err::<(), _>(attempt))
+            },
+            |_, _| {},
+        )
+        .await;
+
+        assert_eq!(result, Err(3));
+        assert_eq!(attempts.get(), 3);
+    }
 
     #[tokio::test]
     async fn registration_stream_continues_after_item_failure() {
