@@ -11,7 +11,8 @@ use crate::item::{self, IconPixmap, Status, StatusNotifierItem, Tooltip};
 use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
-use futures_lite::StreamExt;
+use futures_lite::{Stream, StreamExt};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
@@ -82,6 +83,20 @@ pub enum ActivateRequest {
 }
 
 const PROPERTIES_INTERFACE: &str = "org.kde.StatusNotifierItem";
+
+async fn process_stream<S, T, E, F, Fut, N>(mut stream: S, mut operation: F, mut on_error: N)
+where
+    S: Stream<Item = T> + Unpin,
+    F: FnMut(T) -> Fut,
+    Fut: Future<Output = std::result::Result<(), E>>,
+    N: FnMut(E),
+{
+    while let Some(item) = stream.next().await {
+        if let Err(error) = operation(item).await {
+            on_error(error);
+        }
+    }
+}
 
 /// Client for watching the tray.
 #[derive(Debug)]
@@ -165,29 +180,36 @@ impl Client {
             let tx = tx.clone();
             let items = items.clone();
 
-            let mut stream = watcher_proxy
+            let stream = watcher_proxy
                 .receive_status_notifier_item_registered()
                 .await?;
 
             spawn(async move {
-                while let Some(item) = stream.next().await {
-                    let address = item.args().map(|args| args.service);
+                process_stream(
+                    stream,
+                    |item| {
+                        let connection = connection.clone();
+                        let tx = tx.clone();
+                        let items = items.clone();
 
-                    if let Ok(address) = address {
-                        debug!("received new item: {address}");
-                        if let Err(err) = Self::handle_item(
-                            address,
-                            connection.clone(),
-                            tx.clone(),
-                            items.clone(),
-                        )
-                        .await
-                        {
-                            error!("{err}");
-                            break;
+                        async move {
+                            let args = item.args().map_err(|error| (None, Error::from(error)))?;
+                            let address = args.service;
+
+                            debug!("received new item: {address}");
+                            Self::handle_item(address, connection, tx, items)
+                                .await
+                                .map_err(|error| (Some(address.to_string()), error))
                         }
-                    }
-                }
+                    },
+                    |(address, error)| match address {
+                        Some(address) => {
+                            error!("failed to initialize tray item {address}: {error}");
+                        }
+                        None => error!("failed to parse tray item registration: {error}"),
+                    },
+                )
+                .await;
 
                 Ok::<(), Error>(())
             });
@@ -763,6 +785,26 @@ fn parse_address(address: &str) -> (&str, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn registration_stream_continues_after_item_failure() {
+        use std::{cell::RefCell, future::ready};
+
+        let handled = RefCell::new(Vec::new());
+        let stream = futures_lite::stream::iter([1, 2]);
+
+        process_stream(
+            stream,
+            |item| {
+                handled.borrow_mut().push(item);
+                ready(if item == 1 { Err("broken") } else { Ok(()) })
+            },
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(*handled.borrow(), [1, 2]);
+    }
 
     #[test]
     fn parse_unnamed() {
