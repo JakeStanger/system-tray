@@ -12,7 +12,8 @@ use crate::item::{self, IconPixmap, Status, StatusNotifierItem, Tooltip};
 use crate::menu::{MenuDiff, TrayMenu};
 use crate::names;
 use dbus::DBusProps;
-use futures_lite::StreamExt;
+use futures_lite::{Stream, StreamExt};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
@@ -83,6 +84,52 @@ pub enum ActivateRequest {
 }
 
 const PROPERTIES_INTERFACE: &str = "org.kde.StatusNotifierItem";
+const ITEM_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(200),
+    Duration::from_millis(750),
+];
+
+async fn retry_with_delays<T, E, I, F, Fut, N>(
+    delays: I,
+    mut operation: F,
+    mut on_retry: N,
+) -> std::result::Result<T, E>
+where
+    I: IntoIterator<Item = Duration>,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    N: FnMut(&E, Duration),
+{
+    let mut delays = delays.into_iter();
+
+    loop {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(error) => match delays.next() {
+                Some(delay) => {
+                    on_retry(&error, delay);
+                    sleep(delay).await;
+                }
+                None => return Err(error),
+            },
+        }
+    }
+}
+
+async fn process_stream<S, T, E, F, Fut, N>(mut stream: S, mut operation: F, mut on_error: N)
+where
+    S: Stream<Item = T> + Unpin,
+    F: FnMut(T) -> Fut,
+    Fut: Future<Output = std::result::Result<(), E>>,
+    N: FnMut(E),
+{
+    while let Some(item) = stream.next().await {
+        if let Err(error) = operation(item).await {
+            on_error(error);
+        }
+    }
+}
 
 /// Client for watching the tray.
 #[derive(Debug)]
@@ -166,29 +213,36 @@ impl Client {
             let tx = tx.clone();
             let items = items.clone();
 
-            let mut stream = watcher_proxy
+            let stream = watcher_proxy
                 .receive_status_notifier_item_registered()
                 .await?;
 
             spawn(async move {
-                while let Some(item) = stream.next().await {
-                    let address = item.args().map(|args| args.service);
+                process_stream(
+                    stream,
+                    |item| {
+                        let connection = connection.clone();
+                        let tx = tx.clone();
+                        let items = items.clone();
 
-                    if let Ok(address) = address {
-                        debug!("received new item: {address}");
-                        if let Err(err) = Self::handle_item(
-                            address,
-                            connection.clone(),
-                            tx.clone(),
-                            items.clone(),
-                        )
-                        .await
-                        {
-                            error!("{err}");
-                            break;
+                        async move {
+                            let args = item.args().map_err(|error| (None, Error::from(error)))?;
+                            let address = args.service;
+
+                            debug!("received new item: {address}");
+                            Self::handle_item(address, connection, tx, items)
+                                .await
+                                .map_err(|error| (Some(address.to_string()), error))
                         }
-                    }
-                }
+                    },
+                    |(address, error)| match address {
+                        Some(address) => {
+                            error!("failed to initialize tray item {address}: {error}");
+                        }
+                        None => error!("failed to parse tray item registration: {error}"),
+                    },
+                )
+                .await;
 
                 Ok::<(), Error>(())
             });
@@ -211,7 +265,7 @@ impl Client {
                         Self::handle_item(&item, connection.clone(), tx.clone(), items.clone())
                             .await
                     {
-                        error!("{err}");
+                        error!("failed to initialize tray item {item}: {err}");
                     }
                 }
 
@@ -324,20 +378,22 @@ impl Client {
         path: &str,
         properties_proxy: &PropertiesProxy<'_>,
     ) -> Result<StatusNotifierItem> {
-        let properties = properties_proxy
-            .get_all(
-                InterfaceName::from_static_str(PROPERTIES_INTERFACE)
-                    .expect("to be valid interface name"),
-            )
-            .await;
-
-        let properties = match properties {
-            Ok(properties) => properties,
-            Err(err) => {
-                error!("Error fetching properties from {destination}{path}: {err:?}");
-                return Err(err.into());
-            }
-        };
+        let properties = retry_with_delays(
+            ITEM_RETRY_DELAYS,
+            || {
+                properties_proxy.get_all(
+                    InterfaceName::from_static_str(PROPERTIES_INTERFACE)
+                        .expect("to be valid interface name"),
+                )
+            },
+            |error, delay| {
+                warn!(
+                    "failed to read tray item {destination}{path}: {error}; retrying in {} ms",
+                    delay.as_millis()
+                );
+            },
+        )
+        .await?;
 
         StatusNotifierItem::try_from(DBusProps(properties))
     }
@@ -764,6 +820,66 @@ fn parse_address(address: &str) -> (&str, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn item_initialization_retries_transient_failures() {
+        use std::{cell::Cell, future::ready};
+
+        let attempts = Cell::new(0);
+        let result = retry_with_delays(
+            [Duration::ZERO; 2],
+            || {
+                let attempt = attempts.get() + 1;
+                attempts.set(attempt);
+                ready((attempt == 3).then_some(attempt).ok_or(attempt))
+            },
+            |_, _| {},
+        )
+        .await;
+
+        assert_eq!(result, Ok(3));
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[tokio::test]
+    async fn item_initialization_returns_last_failure() {
+        use std::{cell::Cell, future::ready};
+
+        let attempts = Cell::new(0);
+        let result = retry_with_delays(
+            [Duration::ZERO; 2],
+            || {
+                let attempt = attempts.get() + 1;
+                attempts.set(attempt);
+                ready(Err::<(), _>(attempt))
+            },
+            |_, _| {},
+        )
+        .await;
+
+        assert_eq!(result, Err(3));
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[tokio::test]
+    async fn registration_stream_continues_after_item_failure() {
+        use std::{cell::RefCell, future::ready};
+
+        let handled = RefCell::new(Vec::new());
+        let stream = futures_lite::stream::iter([1, 2]);
+
+        process_stream(
+            stream,
+            |item| {
+                handled.borrow_mut().push(item);
+                ready(if item == 1 { Err("broken") } else { Ok(()) })
+            },
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(*handled.borrow(), [1, 2]);
+    }
 
     #[test]
     fn parse_unnamed() {
