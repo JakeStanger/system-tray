@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.9] - 2026-08-29
+### :bug: Bug Fixes
+- [`4be1528`](https://github.com/JakeStanger/system-tray/commit/4be1528c3969cb044d13b1dc75a2207164743236) - **client**: keep item registration listener alive *(commit by [@funkyra](https://github.com/funkyra))*
+- [`916ad6a`](https://github.com/JakeStanger/system-tray/commit/916ad6a4cc1a71004751085939946a98914c731f) - **client**: retry transient item initialization *(commit by [@funkyra](https://github.com/funkyra))*
+
+### :recycle: Refactors
+- [`a075fb3`](https://github.com/JakeStanger/system-tray/commit/a075fb3b82173a292750c1f7520cc50111df1567) - **client**: remove redundant closures *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+### :memo: Documentation Changes
+- [`a644250`](https://github.com/JakeStanger/system-tray/commit/a64425029b93cf6e314bbb8c7d48c9e8f81cf78d) - add comments to `MenuDiff` *(commit by [@JakeStanger](https://github.com/JakeStanger))*
+
+
 ## [v0.8.7] - 2026-06-20
 ### :bug: Bug Fixes
 - [`57de0f4`](https://github.com/JakeStanger/system-tray/commit/57de0f400f04a029abb6a04564ae1785edea77ad) - **client**: handle invalid icon pixmap *(commit by [@davidaf3](https://github.com/davidaf3))*
@@ -80,3 +92,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.8.5]: https://github.com/JakeStanger/system-tray/compare/v0.8.4...v0.8.5
 [v0.8.6]: https://github.com/JakeStanger/system-tray/compare/v0.8.5...v0.8.6
 [v0.8.7]: https://github.com/JakeStanger/system-tray/compare/v0.8.6...v0.8.7
+[v0.8.9]: https://github.com/JakeStanger/system-tray/compare/v0.8.7...v0.8.9
