@@ -1,3 +1,4 @@
+use std::result;
 #[cfg(feature = "data")]
 use crate::data::apply_menu_diffs;
 use crate::data::TrayItemMap;
@@ -473,9 +474,9 @@ impl Client {
                     })
                     .as_deref()
                     .map(Value::downcast_ref::<&Array>)
-                    .and_then(|res| res.ok())
+                    .and_then(result::Result::ok)
                     .map(IconPixmap::from_array)
-                    .and_then(|res| res.ok());
+                    .and_then(result::Result::ok);
 
                 Some(Icon {
                     icon_name,
