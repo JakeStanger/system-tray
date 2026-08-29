@@ -101,10 +101,16 @@ impl Debug for MenuItem {
     }
 }
 
+/// Describes a change to a (sub)menu item.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct MenuDiff {
+    /// The unique identifier of the menu item.
+    /// This can be at any depth.
     pub id: i32,
+    /// A map of updated properties.
     pub update: MenuItemUpdate,
+    /// A list of properties that have been removed.
+    /// Their values should be unset.
     pub remove: Vec<String>,
 }
 
