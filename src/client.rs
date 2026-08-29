@@ -1,4 +1,3 @@
-use std::result;
 #[cfg(feature = "data")]
 use crate::data::apply_menu_diffs;
 use crate::data::TrayItemMap;
@@ -14,6 +13,7 @@ use crate::names;
 use dbus::DBusProps;
 use futures_lite::{Stream, StreamExt};
 use std::future::Future;
+use std::result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::spawn;
