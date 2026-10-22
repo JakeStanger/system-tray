@@ -449,15 +449,8 @@ impl Client {
                         if old == destination {
                             debug!("[{destination}{path}] disconnected");
 
-                            let watcher_proxy = StatusNotifierWatcherProxy::new(connection)
-                                .await
-                                .expect("Failed to open StatusNotifierWatcherProxy");
-
-                            if let Err(error) = watcher_proxy.unregister_status_notifier_item(old).await {
-                                error!("{error:?}");
-                            }
-
-
+                            // The watcher tracks service exits itself. Explicit
+                            // unregistration is not part of the watcher protocol.
                             items.remove_item(destination);
 
                             tx.send(Event::Remove(destination.to_string()))?;
@@ -816,6 +809,9 @@ fn parse_address(address: &str) -> (&str, String) {
             (d, format!("/{p}"))
         })
 }
+
+#[cfg(test)]
+mod disconnect_tests;
 
 #[cfg(test)]
 mod tests {

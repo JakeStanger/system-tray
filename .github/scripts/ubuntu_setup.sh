@@ -14,5 +14,6 @@ fi
 
 # CROSS_DEB_ARCH is empty for native builds
 $SUDO apt-get update && $SUDO apt-get install --assume-yes \
+	dbus-daemon \
 	libgtk-3-dev${CROSS_DEB_ARCH:+:$CROSS_DEB_ARCH} \
 	libdbusmenu-gtk3-dev${CROSS_DEB_ARCH:+:$CROSS_DEB_ARCH} \
